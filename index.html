@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.8.0</title>
+<title>Stream Deck Button Creator v4.9.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -30,7 +30,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.8.0";
+const APP_VERSION = "4.9.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -259,41 +259,61 @@ function getTwProgress(anims, t) {
   return 1;
 }
 
-function drawChain(ctx, layer, cw, ch, t, loopDur=0) {
-  const anims = layer.animations||[];
-  const { cx, cy } = layerCenter(layer);
-  const baseRot = (layer.rotation||0)*Math.PI/180;
-  const baseOpacity = layer.opacity??1;
-
-  if (!anims.length) {
-    ctx.save();
-    if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
-    if (baseOpacity!==1) ctx.globalAlpha = Math.max(0,Math.min(1,baseOpacity));
-    drawContent(ctx,layer,cw,ch,1,t,loopDur);
-    ctx.restore();
-    return;
-  }
+/* Apply one animation chain's transforms to ctx at time t, using refLayer for centre-based
+   transforms. Returns the resulting opacity multiplier, or null when the chain hides its
+   target at this time (before an entrance-first chain starts, or after an exit finishes). */
+function applyChain(ctx, anims, refLayer, cw, ch, t) {
+  if (!anims.length) return 1;
   const tl = getTimeline(anims);
   const isEnt = ENTRANCES.includes(anims[0]?.type);
-  if (isEnt && t<0) return;
-  ctx.save();
-  // Apply base rotation first
-  if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
-  // Apply base opacity before animation-driven opacity
-  let opacity = baseOpacity;
+  if (isEnt && t<0) return null;
+  let opacity = 1;
   for (const step of tl) {
     let lp;
     if (t<step.start) lp=0;
     else if (t>=step.end) lp=1;
     else lp=(t-step.start)/step.duration;
-    if (lp>=1 && EXITS.includes(step.type)) { ctx.restore(); return; }
-    if (lp<=0 && step===tl[0] && isEnt) { ctx.restore(); return; }
+    if (lp>=1 && EXITS.includes(step.type)) return null;
+    if (lp<=0 && step===tl[0] && isEnt) return null;
     // Steps that haven't started yet contribute nothing — applying an entrance at progress 0 would hide the layer (scale 0 / opacity 0 / off-canvas), which broke chains like rotateCW→bounceIn.
-    if (lp>0) opacity *= applySingle(ctx,step.type,lp,step.easing,layer,cw,ch,step);
+    if (lp>0) opacity *= applySingle(ctx,step.type,lp,step.easing,refLayer,cw,ch,step);
   }
+  return opacity;
+}
+
+/* group/groupT/groupRef: when the layer belongs to a group with animations, the group's chain
+   is applied first (outermost), using groupRef — a pseudo-layer spanning the group's bounding
+   box — so all members transform together around the group's centre. */
+function drawChain(ctx, layer, cw, ch, t, loopDur=0, group=null, groupT=0, groupRef=null) {
+  const { cx, cy } = layerCenter(layer);
+  const baseRot = (layer.rotation||0)*Math.PI/180;
+  ctx.save();
+  let opacity = layer.opacity??1;
+  if (group && groupRef) {
+    const go = applyChain(ctx, group.animations||[], groupRef, cw, ch, groupT);
+    if (go===null) { ctx.restore(); return; }
+    opacity *= go;
+  }
+  if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
+  const o = applyChain(ctx, layer.animations||[], layer, cw, ch, t);
+  if (o===null) { ctx.restore(); return; }
+  opacity *= o;
   ctx.globalAlpha = Math.max(0,Math.min(1,opacity));
-  drawContent(ctx,layer,cw,ch,getTwProgress(anims,t),t,loopDur);
+  drawContent(ctx,layer,cw,ch,getTwProgress(layer.animations||[],t),t,loopDur);
   ctx.restore();
+}
+
+/* Bounding box of a group's member layers as a pseudo-layer (top-left + size), for centring group transforms. */
+function groupBBox(layers, gid) {
+  let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+  layers.forEach(m=>{
+    if (m.groupId!==gid||m.type==="group") return;
+    const c=m.type==="text"||m.type==="emoji";
+    const w=m.width||m.fontSize||0, h=m.height||m.fontSize||0;
+    const lx=c?m.x-w/2:m.x, ly=c?m.y-h/2:m.y;
+    x1=Math.min(x1,lx);y1=Math.min(y1,ly);x2=Math.max(x2,lx+w);y2=Math.max(y2,ly+h);
+  });
+  return x1>x2?null:{type:"rect",x:x1,y:y1,width:x2-x1,height:y2-y1};
 }
 
 function drawContent(ctx, L, cw, ch, tw, t=0, loopDur=0) {
@@ -397,7 +417,14 @@ function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent, lo
     } else ctx.fillStyle=bgColor;
     ctx.fillRect(0,0,w,h);
   }
-  layers.forEach(L=>{if(!L.visible)return;drawChain(ctx,L,w,h,absTime-(L.animStartDelay||0),loopDur);});
+  const bboxes={};
+  layers.forEach(L=>{
+    if(!L.visible||L.type==="group")return;
+    const g=L.groupId?layers.find(x=>x.id===L.groupId&&x.type==="group"):null;
+    if(g&&!g.visible)return;
+    if(g&&!(L.groupId in bboxes))bboxes[L.groupId]=groupBBox(layers,L.groupId);
+    drawChain(ctx,L,w,h,absTime-(L.animStartDelay||0),loopDur,g,g?absTime-(g.animStartDelay||0):0,g?bboxes[L.groupId]:null);
+  });
 }
 
 class GIFEncoder {
@@ -510,13 +537,15 @@ function App() {
   const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,aspectLock:true,aspect:1,scalePct:100,baseW:s,baseH:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
   const addAnts=()=>{const m=Math.max(3,Math.round(canvasW*0.05));const l=mkBase({type:"ants",x:m,y:m,width:canvasW-m*2,height:canvasH-m*2,radius:8,antShape:"rect",antRounded:false,antSize:4,antLen:10,antGap:8,antSpeed:30,antDir:"cw",color:"#ffffff",antAlpha:1});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
   const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const s=Math.min(canvasW/img.width,canvasH/img.height,1),fw=img.width*s,fh=img.height*s;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh),aspectLock:true,aspect:fw/fh,scalePct:100,baseW:Math.round(fw),baseH:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
-  const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id));if(selectedId===id)setSelectedId(null);};
+  const addGroup=()=>{const n=layers.filter(x=>x.type==="group").length+1;const l=mkBase({type:"group",name:"Group "+n});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  // Deleting a group releases its members (their groupId is cleared) rather than deleting them.
+  const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id).map(l=>l.groupId===id?{...l,groupId:null}:l));if(selectedId===id)setSelectedId(null);};
   const mvLayer=(id,dir)=>setLayers(p=>{const i=p.findIndex(l=>l.id===id);if(i<0)return p;const n=i+dir;if(n<0||n>=p.length)return p;const a=[...p];[a[i],a[n]]=[a[n],a[i]];return a;});
   const reorderLayer=(srcId,dstId)=>{if(!srcId||srcId===dstId)return;setLayers(p=>{const si=p.findIndex(l=>l.id===srcId),di=p.findIndex(l=>l.id===dstId);if(si<0||di<0)return p;const a=[...p];const[m]=a.splice(si,1);a.splice(di,0,m);return a;});};
   const reorderAnim=(lid,from,to)=>{if(from===to||from==null)return;setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];if(from<0||from>=a.length||to<0||to>=a.length)return l;const[m]=a.splice(from,1);a.splice(to,0,m);return{...l,animations:a};}));setSelAnimIdx(to);};
   const dupeLayer=id=>{const src=layers.find(l=>l.id===id);if(!src)return;const l={...src,id:uid(),animations:(src.animations||[]).map(a=>({...a,id:uid()}))};setLayers(p=>[...p,l]);setSelectedId(l.id);};
 
-  const onDown=e=>{const r=canvasRef.current.getBoundingClientRect();const sx=canvasW/r.width,sy=canvasH/r.height;const mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;for(let i=layers.length-1;i>=0;i--){const l=layers[i];if(!l.visible)continue;let hit;if(l.type==="text"||l.type==="emoji")hit=Math.abs(mx-l.x)<(l.width||l.fontSize*(l.text?.length||1)*0.6)/2&&Math.abs(my-l.y)<(l.height||l.fontSize)/2;else if(l.type==="circle")hit=Math.hypot(mx-(l.x+l.radius),my-(l.y+l.radius))<=l.radius;else hit=mx>=l.x&&mx<=l.x+(l.width||0)&&my>=l.y&&my<=l.y+(l.height||0);if(hit){setSelectedId(l.id);setDrag({id:l.id,sx:mx,sy:my,ox:l.x,oy:l.y});return;}}setSelectedId(null);};
+  const onDown=e=>{const r=canvasRef.current.getBoundingClientRect();const sx=canvasW/r.width,sy=canvasH/r.height;const mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;for(let i=layers.length-1;i>=0;i--){const l=layers[i];if(!l.visible||l.type==="group")continue;let hit;if(l.type==="text"||l.type==="emoji")hit=Math.abs(mx-l.x)<(l.width||l.fontSize*(l.text?.length||1)*0.6)/2&&Math.abs(my-l.y)<(l.height||l.fontSize)/2;else if(l.type==="circle")hit=Math.hypot(mx-(l.x+l.radius),my-(l.y+l.radius))<=l.radius;else hit=mx>=l.x&&mx<=l.x+(l.width||0)&&my>=l.y&&my<=l.y+(l.height||0);if(hit){setSelectedId(l.id);setDrag({id:l.id,sx:mx,sy:my,ox:l.x,oy:l.y});return;}}setSelectedId(null);};
   const onMove=e=>{if(!drag)return;const r=canvasRef.current.getBoundingClientRect();const mx=(e.clientX-r.left)*canvasW/r.width,my=(e.clientY-r.top)*canvasH/r.height;upLayer(drag.id,{x:Math.round(drag.ox+mx-drag.sx),y:Math.round(drag.oy+my-drag.sy)});};
   const onUp=()=>setDrag(null);
 
@@ -679,7 +708,7 @@ function App() {
           <div style={{padding:"10px 14px",borderBottom:"1px solid #1e1e2e"}}>
             <SL>Add Layer</SL>
             <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-              {[{l:"T Text",f:addText},{l:"◼ Rect",f:addRect},{l:"● Circle",f:addCircle},{l:"😀 Emoji",f:()=>{setShowEmoji(!showEmoji);setShowSvg(false);}},{l:"✦ Icons",f:()=>{setShowSvg(!showSvg);setShowEmoji(false);}},{l:"📷 Image",f:()=>fileRef.current?.click()},{l:"⬚ Ants",f:addAnts}].map(b=><button key={b.l} onClick={b.f} style={AB}>{b.l}</button>)}
+              {[{l:"T Text",f:addText},{l:"◼ Rect",f:addRect},{l:"● Circle",f:addCircle},{l:"😀 Emoji",f:()=>{setShowEmoji(!showEmoji);setShowSvg(false);}},{l:"✦ Icons",f:()=>{setShowSvg(!showSvg);setShowEmoji(false);}},{l:"📷 Image",f:()=>fileRef.current?.click()},{l:"⬚ Ants",f:addAnts},{l:"▣ Group",f:addGroup}].map(b=><button key={b.l} onClick={b.f} style={AB}>{b.l}</button>)}
             </div>
             <input ref={fileRef} type="file" accept="image/*" onChange={addImg} style={{display:"none"}}/>
             {showEmoji&&<div style={{marginTop:6,display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2,background:"#1a1a28",borderRadius:6,padding:6,maxHeight:120,overflowY:"auto"}}>{EMOJIS.map(em=><button key={em} onClick={()=>addEmoji(em)} style={{fontSize:16,background:"none",border:"none",cursor:"pointer",padding:2,borderRadius:4}} onMouseOver={ev=>ev.target.style.background="#2a2a3e"} onMouseOut={ev=>ev.target.style.background="none"}>{em}</button>)}</div>}
@@ -698,17 +727,26 @@ function App() {
           <div style={{flex:1,overflowY:"auto",padding:"6px 0"}}>
             <div style={{padding:"0 14px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666"}}>Layers ({layers.length})</div>
             {!layers.length&&<div style={{padding:"20px 14px",textAlign:"center",color:"#444",fontSize:12}}>No layers yet</div>}
-            {[...layers].reverse().map((l,j)=>(
-              <div key={l.id} draggable onDragStart={e=>{setDragLayerId(l.id);e.dataTransfer.effectAllowed="move";}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();reorderLayer(dragLayerId,l.id);setDragLayerId(null);}} onDragEnd={()=>setDragLayerId(null)} onClick={()=>{setSelectedId(l.id);setSelAnimIdx(0);}} style={{padding:"6px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,background:selectedId===l.id?"#1e1e32":"transparent",borderLeft:selectedId===l.id?"2px solid #e94560":"2px solid transparent",opacity:dragLayerId===l.id?0.4:1}}>
-                <span style={{fontSize:12,width:20,textAlign:"center",flexShrink:0}}>{l.type==="text"?"T":l.type==="rect"?"◼":l.type==="circle"?"●":l.type==="emoji"?l.text:l.type==="svg"?"✦":l.type==="ants"?"⬚":"📷"}</span>
-                <span style={{fontSize:11,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.type==="text"?l.text:l.type==="emoji"?"Emoji":l.type==="image"?"Image":l.type==="ants"?"Marching Ants":l.type==="svg"?(SVG_ICONS.find(i=>i.id===l.iconId)?.label.replace(/^[^\s]+\s/,"")||"Icon"):l.type}</span>
+            {(()=>{
+            /* Display rows: reversed z-order (front first), but group members are listed indented
+               under their group row (hidden when collapsed) regardless of z position. Drop rules:
+               onto a group row = join it; onto a member row = join that group at that spot; onto a
+               top-level row = leave any group and reorder. Dragging a group row only ever reorders. */
+            const rev=[...layers].reverse();const rows=[];
+            rev.forEach(l=>{if(l.type==="group"){rows.push({l,d:0});if(!l.collapsed)rev.forEach(m=>{if(m.groupId===l.id&&m.type!=="group")rows.push({l:m,d:1});});}else if(!(l.groupId&&layers.some(g=>g.id===l.groupId&&g.type==="group")))rows.push({l,d:0});});
+            return rows.map(({l,d})=>{const zi=layers.findIndex(x=>x.id===l.id);return (
+              <div key={l.id} draggable onDragStart={e=>{setDragLayerId(l.id);e.dataTransfer.effectAllowed="move";}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const src=layers.find(x=>x.id===dragLayerId);setDragLayerId(null);if(!src||src.id===l.id)return;if(src.type==="group")reorderLayer(src.id,l.id);else if(l.type==="group")upLayer(src.id,{groupId:l.id});else{if((src.groupId||null)!==(l.groupId||null))upLayer(src.id,{groupId:l.groupId||null});reorderLayer(src.id,l.id);}}} onDragEnd={()=>setDragLayerId(null)} onClick={()=>{setSelectedId(l.id);setSelAnimIdx(0);}} style={{padding:"6px 14px",paddingLeft:14+d*16,cursor:"pointer",display:"flex",alignItems:"center",gap:6,background:selectedId===l.id?"#1e1e32":(l.type==="group"&&dragLayerId&&dragLayerId!==l.id&&layers.find(x=>x.id===dragLayerId)?.type!=="group"?"#12303a":"transparent"),borderLeft:selectedId===l.id?"2px solid #e94560":"2px solid transparent",opacity:dragLayerId===l.id?0.4:1}}>
+                {l.type==="group"&&<button onClick={e=>{e.stopPropagation();upLayer(l.id,{collapsed:!l.collapsed});}} title={l.collapsed?"Show members":"Hide members"} style={{background:"none",border:"none",color:"#7dd",cursor:"pointer",fontSize:14,padding:"0 2px",width:18,flexShrink:0,lineHeight:1}}>{l.collapsed?"▸":"▾"}</button>}
+                <span style={{fontSize:12,width:20,textAlign:"center",flexShrink:0}}>{l.type==="group"?"▣":l.type==="text"?"T":l.type==="rect"?"◼":l.type==="circle"?"●":l.type==="emoji"?l.text:l.type==="svg"?"✦":l.type==="ants"?"⬚":"📷"}</span>
+                <span style={{fontSize:11,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:l.type==="group"?"#7dd":"inherit"}}>{l.type==="group"?(l.name||"Group"):l.type==="text"?l.text:l.type==="emoji"?"Emoji":l.type==="image"?"Image":l.type==="ants"?"Marching Ants":l.type==="svg"?(SVG_ICONS.find(i=>i.id===l.iconId)?.label.replace(/^[^\s]+\s/,"")||"Icon"):l.type}</span>
+                {l.type==="group"&&(()=>{const c=layers.filter(m=>m.groupId===l.id&&m.type!=="group").length;return <span style={{fontSize:8,color:"#7dd",flexShrink:0}} title={`${c} member layer${c===1?"":"s"}`}>{c}</span>;})()}
                 {(l.animations||[]).length>0&&<span style={{fontSize:9,color:"#e94560",background:"#2a1525",padding:"1px 4px",borderRadius:3}}>{l.animations.length}✦</span>}
-                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,1);}} disabled={j===0} title="Move up (towards front)" style={{background:"none",border:"none",color:j===0?"#333":"#777",cursor:j===0?"default":"pointer",fontSize:10,padding:"0 1px"}}>↑</button>
-                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,-1);}} disabled={j===layers.length-1} title="Move down (towards back)" style={{background:"none",border:"none",color:j===layers.length-1?"#333":"#777",cursor:j===layers.length-1?"default":"pointer",fontSize:10,padding:"0 1px"}}>↓</button>
+                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,1);}} disabled={zi===layers.length-1} title="Move up (towards front)" style={{background:"none",border:"none",color:zi===layers.length-1?"#333":"#777",cursor:zi===layers.length-1?"default":"pointer",fontSize:10,padding:"0 1px"}}>↑</button>
+                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,-1);}} disabled={zi===0} title="Move down (towards back)" style={{background:"none",border:"none",color:zi===0?"#333":"#777",cursor:zi===0?"default":"pointer",fontSize:10,padding:"0 1px"}}>↓</button>
                 <button onClick={e=>{e.stopPropagation();upLayer(l.id,{visible:!l.visible});}} style={{background:"none",border:"none",color:l.visible?"#888":"#444",cursor:"pointer",fontSize:11}}>{l.visible?"👁":"👁‍🗨"}</button>
                 <button onClick={e=>{e.stopPropagation();delLayer(l.id);}} style={{background:"none",border:"none",color:"#e94560",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
               </div>
-            ))}
+            );});})()}
           </div>
         </div>
 
@@ -761,7 +799,11 @@ function App() {
           {!sel?<div style={{textAlign:"center",color:"#444",marginTop:40,fontSize:12}}>Select a layer to edit</div>:(
             <React.Fragment>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666",marginBottom:10}}>{sel.type.toUpperCase()} Properties</div>
-              <PS t="Position">{(()=>{
+              {sel.type==="group"&&<PS t="Group">
+                <PR l="Name"><input value={sel.name||""} onChange={e=>upLayer(sel.id,{name:e.target.value})} style={{...NI,width:"100%"}}/></PR>
+                {(()=>{const n=layers.filter(m=>m.groupId===sel.id).length;return <div style={{fontSize:10,color:"#666",lineHeight:1.5}}>{n} member layer{n===1?"":"s"}. Drag a layer onto this group (or between its members) to add it; drag it onto a layer outside the group to remove it. Members are listed indented below the group. The animation chain below moves, scales and fades all members as one, around the group's combined centre.</div>;})()}
+              </PS>}
+              {sel.type!=="group"&&<PS t="Position">{(()=>{
                 // helpers: does this layer type use x,y as top-left or draw-centre?
                 const isCentered = sel.type==="text"||sel.type==="emoji";
                 const lw = isCentered ? (sel.width||sel.fontSize||0) : (sel.width||0);
@@ -809,8 +851,9 @@ function App() {
                   <input type="range" min={0} max={1} step={0.01} value={sel.opacity??1} onChange={e=>upLayer(sel.id,{opacity:+e.target.value})} style={{flex:1}}/>
                   <span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{Math.round((sel.opacity??1)*100)}%</span>
                 </PR>
+                {(()=>{const gs=layers.filter(g=>g.type==="group");return gs.length?<PR l="Group"><select value={sel.groupId||""} onChange={e=>upLayer(sel.id,{groupId:e.target.value||null})} style={{...NI,width:"100%"}}><option value="">None</option>{gs.map(g=><option key={g.id} value={g.id}>{g.name||"Group"}</option>)}</select></PR>:null;})()}
                 </React.Fragment>);
-              })()}</PS>
+              })()}</PS>}
 
               {sel.type==="text"&&<PS t="Text">
                 <textarea value={sel.text} onChange={e=>upLayer(sel.id,{text:e.target.value})} rows={2} style={{...NI,width:"100%",resize:"vertical",fontFamily:"inherit"}}/>

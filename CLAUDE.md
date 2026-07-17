@@ -34,8 +34,12 @@ Rough map of the `<script type="text/babel">` block (top to bottom):
 
 - **Layers** are plain objects `{id, type, x, y, ...}`. Types: `text`, `rect`,
   `circle`, `emoji`, `image` (holds a live `HTMLImageElement` in `.img`),
-  `svg` (references `SVG_ICONS` by `iconId`), `ants` (marching-ants border).
-  `text`/`emoji` store x,y as the draw centre; all others as top-left.
+  `svg` (references `SVG_ICONS` by `iconId`), `ants` (marching-ants border),
+  `group` (draws nothing itself; a named container whose animation chain is
+  applied outermost to every member layer — members point at it via
+  `groupId`, transforms centre on the members' combined bbox from
+  `groupBBox`). `text`/`emoji` store x,y as the draw centre; all others as
+  top-left.
 - **Animations** are per-layer chains of steps `{id, type, duration, easing,
   ...params}` played sequentially, plus a per-layer `animStartDelay`.
 - **SVG_ICONS** entries draw with canvas paths. The `draw` fn may return a

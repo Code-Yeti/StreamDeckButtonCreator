@@ -4,7 +4,7 @@ Design animated button images for your Elgato Stream Deck — right in the
 browser, in a single HTML file. No install, no build step, no server: download
 `index.html`, open it in Chrome or Edge, and start designing.
 
-![version](https://img.shields.io/badge/version-4.8.0-e94560)
+![version](https://img.shields.io/badge/version-4.9.0-e94560)
 
 ## What it does
 
@@ -19,6 +19,11 @@ it live, then export a static PNG or an animated GIF/WebP sized for your deck.
 - **Images** — upload your own; placed at actual size or scaled to fit
 - **Marching ants** — animated dashed borders with dash/square/dot styles,
   size, gap, speed, direction and transparency, snapped to loop seamlessly
+- **Groups** — collect layers into a named group (drag a layer onto the group
+  in the layer list, or use the Group dropdown); members list indented under
+  the group with a collapse toggle, and dragging a member onto a layer outside
+  the group removes it. A group has its own animation chain that moves, scales
+  and fades every member as one
 
 Layers can be moved by dragging on the canvas, reordered from the layer list
 (arrow buttons or drag-and-drop — animation steps drag too), duplicated,
