@@ -5,6 +5,9 @@ Everything lives in `index.html` — no build step, no dependencies
 to install. Open the file in a browser (Chrome/Edge preferred; WebP export
 needs a Chromium browser) to run and test it.
 
+GitHub repo: https://github.com/Code-Yeti/StreamDeckButtonCreator
+(`origin`) — push `main` after committing a release so it appears there.
+
 ## Architecture
 
 One HTML file containing a React 18 app written in JSX, transpiled in-browser
