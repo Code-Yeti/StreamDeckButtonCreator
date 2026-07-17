@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.7.0</title>
+<title>Stream Deck Button Creator v4.7.1</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -30,7 +30,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.7.0";
+const APP_VERSION = "4.7.1";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -491,7 +491,7 @@ function App() {
   /* Size edit that honours the aspect-ratio lock (image/svg layers). Typing a new W/H re-bases the scale slider at 100%. The locked ratio comes from l.aspect (stable across keystrokes) rather than the live w/h. */
   const upSize = useCallback((l,dim,val)=>{val=Math.max(1,Math.round(val)||1);if(l.type==="circle"){upLayer(l.id,{radius:val,width:val*2,height:val*2,scalePct:100,baseW:val*2,baseH:val*2,baseX:l.x,baseY:l.y,lastSX:l.x,lastSY:l.y});return;}const lock=l.aspectLock??true;const asp=l.aspect||((l.width>0&&l.height>0)?l.width/l.height:1);const u={scalePct:100,aspect:asp};if(dim==="width"){u.width=val;if(lock)u.height=Math.max(1,Math.round(val/asp));else u.aspect=(l.height>0)?val/l.height:1;}else{u.height=val;if(lock)u.width=Math.max(1,Math.round(val*asp));else u.aspect=(val>0)?(l.width||1)/val:1;}u.baseW=u.width??l.width;u.baseH=u.height??l.height;u.baseX=l.x;u.baseY=l.y;u.lastSX=l.x;u.lastSY=l.y;if(l.type==="rect")u.baseR=l.radius??0;upLayer(l.id,u);},[upLayer]);
   /* Scale slider resizes around the layer's centre. The unrounded base-box origin (baseX/baseY) is the anchor so repeated slider moves don't accumulate rounding drift; lastSX/lastSY record the x/y the last scale wrote — if they no longer match, the layer was moved by other means (drag, centre, mirror, typed X/Y) and the anchor is re-captured from the current geometry. */
-  const upScale = useCallback((l,pct)=>{if(l.type==="text"||l.type==="emoji"){const bf=l.baseF??l.fontSize,nf=Math.max(1,Math.round(bf*pct/100));const u={scalePct:pct,baseF:bf,fontSize:nf};if(l.type==="emoji"){u.width=nf;u.height=nf;}else{const bw=l.baseW??l.width,bh=l.baseH??l.height;u.baseW=bw;u.baseH=bh;u.width=Math.round(bw*pct/100);u.height=Math.round(bh*pct/100);}upLayer(l.id,u);return;}const bw=l.baseW??l.width,bh=l.baseH??l.height;const moved=l.baseX===undefined||l.x!==l.lastSX||l.y!==l.lastSY;const bx=moved?l.x+(l.width-bw)/2:l.baseX,by=moved?l.y+(l.height-bh)/2:l.baseY;let nw=Math.max(1,Math.round(bw*pct/100)),nh=Math.max(1,Math.round(bh*pct/100));const u={};if(l.type==="circle"){const nr=Math.max(1,Math.round(bw*pct/200));nw=nh=nr*2;u.radius=nr;}else if(l.type==="rect"){const br=l.baseR??l.radius??0;if(br){u.radius=Math.round(br*pct/100);u.baseR=br;}}const nx=Math.round(bx+(bw-nw)/2),ny=Math.round(by+(bh-nh)/2);upLayer(l.id,{...u,scalePct:pct,baseW:bw,baseH:bh,baseX:bx,baseY:by,lastSX:nx,lastSY:ny,width:nw,height:nh,x:nx,y:ny});},[upLayer]);
+  const upScale = useCallback((l,pct)=>{const bw=l.baseW??l.width,bh=l.baseH??l.height;const moved=l.baseX===undefined||l.x!==l.lastSX||l.y!==l.lastSY;const bx=moved?l.x+(l.width-bw)/2:l.baseX,by=moved?l.y+(l.height-bh)/2:l.baseY;let nw=Math.max(1,Math.round(bw*pct/100)),nh=Math.max(1,Math.round(bh*pct/100));const u={};if(l.type==="circle"){const nr=Math.max(1,Math.round(bw*pct/200));nw=nh=nr*2;u.radius=nr;}else if(l.type==="rect"){const br=l.baseR??l.radius??0;if(br){u.radius=Math.round(br*pct/100);u.baseR=br;}}const nx=Math.round(bx+(bw-nw)/2),ny=Math.round(by+(bh-nh)/2);upLayer(l.id,{...u,scalePct:pct,baseW:bw,baseH:bh,baseX:bx,baseY:by,lastSX:nx,lastSY:ny,width:nw,height:nh,x:nx,y:ny});},[upLayer]);
   const upAnim = useCallback((lid,idx,u)=>setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a[idx]={...a[idx],...u};return{...l,animations:a};})),[]);
   const addAnim = useCallback((lid,type="fadeIn")=>{setLayers(p=>p.map(l=>l.id!==lid?l:{...l,animations:[...(l.animations||[]),makeAnimStep(type)]}));setSelAnimIdx(selAnims.length);},[selAnims.length]);
   const rmAnim = useCallback((lid,idx)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a.splice(idx,1);return{...l,animations:a};}));setSelAnimIdx(i=>Math.max(0,Math.min(i,selAnims.length-2)));},[selAnims.length]);
@@ -784,9 +784,7 @@ function App() {
                 {sel.type==="circle"&&<React.Fragment>
                   <PR l="Radius"><input type="number" value={sel.radius} onChange={e=>upSize(sel,"radius",+e.target.value)} style={NI}/></PR>
                   <PR l="Scale"><input type="range" min={10} max={300} value={sel.scalePct??100} onChange={e=>upScale(sel,+e.target.value)} style={{flex:1}} title="Scale relative to the set radius, anchored at the circle's centre"/><span style={{fontSize:10,color:"#888",width:34,textAlign:"right"}}>{sel.scalePct??100}%</span></PR>
-                </React.Fragment>}
-                {(sel.type==="text"||sel.type==="emoji")&&<PR l="Scale"><input type="range" min={10} max={300} value={sel.scalePct??100} onChange={e=>upScale(sel,+e.target.value)} style={{flex:1}} title="Scale relative to the set font size, anchored at the layer's centre"/><span style={{fontSize:10,color:"#888",width:34,textAlign:"right"}}>{sel.scalePct??100}%</span></PR>}
-                <PR l="Centre">
+                </React.Fragment>}                <PR l="Centre">
                   <button onClick={centerX} style={btnStyle} title="Centre horizontally">↔ H</button>
                   <button onClick={centerY} style={btnStyle} title="Centre vertically">↕ V</button>
                   <button onClick={()=>{centerX();centerY();}} style={{...btnStyle,background:"#1a2a3a",borderColor:"#2a4a5a",color:"#7dd"}} title="Centre on canvas">⊕ Both</button>
@@ -811,7 +809,7 @@ function App() {
               {sel.type==="text"&&<PS t="Text">
                 <textarea value={sel.text} onChange={e=>upLayer(sel.id,{text:e.target.value})} rows={2} style={{...NI,width:"100%",resize:"vertical",fontFamily:"inherit"}}/>
                 <PR l="Font"><select value={sel.fontFamily} onChange={e=>upLayer(sel.id,{fontFamily:e.target.value})} style={{...NI,width:"100%"}}>{FONTS.map(f=><option key={f} value={f}>{f}</option>)}</select></PR>
-                <PR l="Size"><input type="range" min={6} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value,scalePct:100,baseF:+e.target.value,baseW:sel.width,baseH:sel.height})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
+                <PR l="Size"><input type="range" min={6} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
                 <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
                 <PR l="Style">
                   <label style={{fontSize:11,color:"#aaa",display:"flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={sel.bold} onChange={e=>upLayer(sel.id,{bold:e.target.checked})}/><b>B</b></label>
@@ -823,7 +821,7 @@ function App() {
               </PS>}
 
               {sel.type==="emoji"&&<PS t="Emoji">
-                <PR l="Size"><input type="range" min={8} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value,width:+e.target.value,height:+e.target.value,scalePct:100,baseF:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
+                <PR l="Size"><input type="range" min={8} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value,width:+e.target.value,height:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2,marginTop:6}}>{EMOJIS.map(em=><button key={em} onClick={()=>upLayer(sel.id,{text:em})} style={{fontSize:14,background:sel.text===em?"#2a2a3e":"none",border:"none",cursor:"pointer",padding:2,borderRadius:4}}>{em}</button>)}</div>
               </PS>}
 
