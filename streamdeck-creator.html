@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v3.0.0</title>
+<title>Stream Deck Button Creator v3.0.1</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.1";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -418,7 +418,7 @@ function App() {
   const addCircle=()=>{const r=Math.round(canvasW*0.2);const l=mkBase({type:"circle",x:Math.round(canvasW/2-r),y:Math.round(canvasH/2-r),radius:r,color:"#0f3460",stroke:false,strokeColor:"#fff",strokeWidth:2,width:r*2,height:r*2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
   const addEmoji=(emoji)=>{const l=mkBase({type:"emoji",text:emoji,x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/3),width:Math.round(canvasW/3),height:Math.round(canvasW/3)});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowEmoji(false);setSelAnimIdx(0);};
   const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
-  const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const a=img.width/img.height,fw=Math.min(canvasW*0.8,img.width),fh=fw/a;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
+  const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const s=Math.min(canvasW/img.width,canvasH/img.height,1),fw=img.width*s,fh=img.height*s;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
   const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id));if(selectedId===id)setSelectedId(null);};
   const mvLayer=(id,dir)=>setLayers(p=>{const i=p.findIndex(l=>l.id===id);if(i<0)return p;const n=i+dir;if(n<0||n>=p.length)return p;const a=[...p];[a[i],a[n]]=[a[n],a[i]];return a;});
   const dupeLayer=id=>{const src=layers.find(l=>l.id===id);if(!src)return;const l={...src,id:uid(),animations:(src.animations||[]).map(a=>({...a,id:uid()}))};setLayers(p=>[...p,l]);setSelectedId(l.id);};
