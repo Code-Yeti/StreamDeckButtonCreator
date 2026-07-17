@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.5.0</title>
+<title>Stream Deck Button Creator v4.5.1</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.5.0";
+const APP_VERSION = "4.5.1";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -133,10 +133,10 @@ const SVG_ICONS = [
   { id:"lightning",      label:"⚡ Lightning",          cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.44,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx+s*0.2,cy-s);ctx.lineTo(cx-s*0.3,cy+s*0.1);ctx.lineTo(cx+s*0.05,cy+s*0.1);ctx.lineTo(cx-s*0.2,cy+s);ctx.lineTo(cx+s*0.3,cy-s*0.1);ctx.lineTo(cx-s*0.05,cy-s*0.1);ctx.closePath(); } },
   { id:"heart",          label:"♥ Heart",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2-s*0.1; ctx.beginPath();ctx.moveTo(cx,cy+s*0.7);ctx.bezierCurveTo(cx-s*1.1,cy,cx-s*1.1,cy-s,cx,cy-s*0.4);ctx.bezierCurveTo(cx+s*1.1,cy-s,cx+s*1.1,cy,cx,cy+s*0.7);ctx.closePath(); } },
   { id:"mic",            label:"🎤 Mic",                cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.44,cx=x+w/2,cy=y+h/2,mw=s*0.45,mh=s*0.65,mr=mw/2; ctx.beginPath();ctx.roundRect(cx-mr,cy-s,mw,mh,mr);ctx.fill();ctx.beginPath();ctx.arc(cx,cy-s+mh,s*0.58,0,Math.PI);ctx.moveTo(cx-s*0.58,cy-s+mh);ctx.lineTo(cx-s*0.58,cy-s+mh+s*0.15);ctx.moveTo(cx+s*0.58,cy-s+mh);ctx.lineTo(cx+s*0.58,cy-s+mh+s*0.15);ctx.moveTo(cx,cy-s+mh+s*0.15);ctx.lineTo(cx,cy+s*0.5);return "stroke-mic"; } },
-  { id:"power",          label:"⏻ Power",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2,lw=r*0.22; ctx.beginPath();ctx.arc(cx,cy+r*0.08,r,Math.PI*0.25,Math.PI*0.75,false);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx,cy-r*0.18);ctx.lineTo(cx,cy-r);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1; return "stroke-only"; } },
-  { id:"gear",           label:"⚙ Gear",               cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,ir=r*0.55,teeth=8,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<teeth*2;i++){const a=i*Math.PI/teeth,ro=i%2===0?r:r*0.78;ctx.lineTo(cx+Math.cos(a)*ro,cy+Math.sin(a)*ro);}ctx.closePath();ctx.fill();ctx.beginPath();ctx.arc(cx,cy,ir,0,Math.PI*2);return "cutout"; } },
+  { id:"power",          label:"⏻ Power",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2,lw=r*0.22; ctx.beginPath();ctx.arc(cx,cy+r*0.08,r,-Math.PI*0.3,Math.PI*1.3,false);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx,cy-r*0.18);ctx.lineTo(cx,cy-r);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1; return "stroke-only"; } },
+  { id:"gear",           label:"⚙ Gear",               cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,ir=r*0.55,teeth=8,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<teeth*2;i++){const a=i*Math.PI/teeth,ro=i%2===0?r:r*0.78;ctx.lineTo(cx+Math.cos(a)*ro,cy+Math.sin(a)*ro);}ctx.closePath();ctx.arc(cx,cy,ir,0,Math.PI*2);return "cutout"; } },
   { id:"eye",            label:"👁 Eye",                cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2,er=s*0.38; ctx.beginPath();ctx.moveTo(cx-s,cy);ctx.bezierCurveTo(cx-s,cy-s*0.6,cx+s,cy-s*0.6,cx+s,cy);ctx.bezierCurveTo(cx+s,cy+s*0.6,cx-s,cy+s*0.6,cx-s,cy);ctx.fill();ctx.fillStyle="inherit";ctx.beginPath();ctx.arc(cx,cy,er,0,Math.PI*2);return "eye"; } },
-  { id:"vol-up",         label:"🔊 Volume Up",          cat:"Audio",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2-s*0.15,cy=y+h/2,sw=s*0.3,sh=s*0.55; ctx.beginPath();ctx.rect(cx-s*0.6,cy-sh*0.45,sw,sh*0.9);ctx.moveTo(cx-s*0.3,cy-sh*0.45);ctx.lineTo(cx+s*0.1,cy-sh);ctx.lineTo(cx+s*0.1,cy+sh);ctx.lineTo(cx-s*0.3,cy+sh*0.45);ctx.closePath();ctx.fill();ctx.beginPath();ctx.arc(cx+s*0.25,cy,s*0.35,Math.PI*0.3,-Math.PI*0.3,false);ctx.arc(cx+s*0.25,cy,s*0.55,Math.PI*-0.3,Math.PI*0.3,true);ctx.fill(); } },
+  { id:"vol-up",         label:"🔊 Volume Up",          cat:"Audio",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2-s*0.15,cy=y+h/2,sw=s*0.3,sh=s*0.55; ctx.beginPath();ctx.rect(cx-s*0.6,cy-sh*0.45,sw,sh*0.9);ctx.moveTo(cx-s*0.3,cy-sh*0.45);ctx.lineTo(cx+s*0.1,cy-sh);ctx.lineTo(cx+s*0.1,cy+sh);ctx.lineTo(cx-s*0.3,cy+sh*0.45);ctx.closePath();ctx.fill();ctx.beginPath();ctx.arc(cx+s*0.25,cy,s*0.35,Math.PI*0.3,-Math.PI*0.3,true);ctx.arc(cx+s*0.25,cy,s*0.55,Math.PI*-0.3,Math.PI*0.3,false);ctx.fill(); } },
   { id:"vol-mute",       label:"🔇 Mute",               cat:"Audio",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2-s*0.15,cy=y+h/2,sh=s*0.55,sw=s*0.3; ctx.beginPath();ctx.rect(cx-s*0.6,cy-sh*0.45,sw,sh*0.9);ctx.moveTo(cx-s*0.3,cy-sh*0.45);ctx.lineTo(cx+s*0.1,cy-sh);ctx.lineTo(cx+s*0.1,cy+sh);ctx.lineTo(cx-s*0.3,cy+sh*0.45);ctx.closePath();ctx.fill();const lw=s*0.18,x1=cx+s*0.35,y1=cy-s*0.35,x2=cx+s*0.75,y2=cy+s*0.35;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.moveTo(x2,y1);ctx.lineTo(x1,y2);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1; } },
   { id:"pentagon",       label:"⬠ Pentagon",           cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.46,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<5;i++){const a=i*2*Math.PI/5-Math.PI/2;ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}ctx.closePath(); } },
   { id:"octagon",        label:"⯃ Octagon",            cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.46,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<8;i++){const a=i*Math.PI/4+Math.PI/8;ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}ctx.closePath(); } },
@@ -340,7 +340,7 @@ function drawContent(ctx, L, cw, ch, tw, t=0, loopDur=0) {
     if (icon) {
       ctx.save();
       ctx.fillStyle = L.color;
-      ctx.strokeStyle = L.strokeColor||L.color;
+      ctx.strokeStyle = L.color; // strokes drawn inside icon draw fns are icon body, not outline — the optional outline below sets its own strokeStyle
       ctx.lineWidth = L.strokeWidth||2;
       const result = icon.draw(ctx, L.x, L.y, L.width, L.height);
       if (result==="stroke-only") {
@@ -363,6 +363,7 @@ function drawContent(ctx, L, cw, ch, tw, t=0, loopDur=0) {
       if (L.stroke && result!=="stroke-only" && result!=="stroke-mic") {
         ctx.strokeStyle = L.strokeColor||"#fff";
         ctx.lineWidth = L.strokeWidth||2;
+        ctx.fillStyle = L.color; // eye-mode icons leave a dark pupil fillStyle behind; internal fills in the outline re-draw must use the layer colour
         icon.draw(ctx, L.x, L.y, L.width, L.height);
         ctx.stroke();
       }

@@ -4,7 +4,7 @@ Design animated button images for your Elgato Stream Deck — right in the
 browser, in a single HTML file. No install, no build step, no server: download
 `index.html`, open it in Chrome or Edge, and start designing.
 
-![version](https://img.shields.io/badge/version-4.5.0-e94560)
+![version](https://img.shields.io/badge/version-4.5.1-e94560)
 
 ## What it does
 
