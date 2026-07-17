@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.3.0</title>
+<title>Stream Deck Button Creator v4.4.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.3.0";
+const APP_VERSION = "4.4.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -167,8 +167,10 @@ const uid = () => Math.random().toString(36).slice(2,9);
 /* Random project names: adjective + animal, e.g. "suspiciouscat" */
 const NAME_ADJECTIVES = ["suspicious","sleepy","grumpy","dapper","sneaky","turbo","wobbly","fluffy","cosmic","spicy","mellow","frisky","jazzy","salty","peppy","shifty","snazzy","bouncy","quirky","zesty","crafty","dizzy","perky","moody","plucky"];
 const NAME_ANIMALS = ["cat","dog","fox","owl","panda","otter","badger","ferret","gecko","koala","lemur","llama","moose","narwhal","penguin","raccoon","sloth","tiger","walrus","wombat","yak","hedgehog","platypus","axolotl","capybara"];
-const randomProjectName = () => NAME_ADJECTIVES[Math.floor(Math.random()*NAME_ADJECTIVES.length)]+NAME_ANIMALS[Math.floor(Math.random()*NAME_ANIMALS.length)];
-const fileSafeName = n => n.trim().replace(/[^a-zA-Z0-9-_]+/g,"_").replace(/^_+|_+$/g,"")||"untitled";
+const capWord = s => s.charAt(0).toUpperCase()+s.slice(1);
+const randomProjectName = () => capWord(NAME_ADJECTIVES[Math.floor(Math.random()*NAME_ADJECTIVES.length)])+capWord(NAME_ANIMALS[Math.floor(Math.random()*NAME_ANIMALS.length)]);
+const fileSafeName = n => n.trim().replace(/[^a-zA-Z0-9-_]+/g,"_").replace(/^_+|_+$/g,"")||"Untitled";
+const tsStamp = () => {const d=new Date(),p=n=>String(n).padStart(2,"0");return `${p(d.getDate())}${p(d.getMonth()+1)}${d.getFullYear()}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;};
 const makeAnimStep = (type="fadeIn") => ({ id:uid(), type, duration:0.4, easing:"easeOut", ...(ANIM_PARAM_DEFAULTS[type]||{}) });
 const getTimeline = anims => { let t=0; return (anims||[]).map(a => { const s=t; t+=a.duration; return {...a,start:s,end:t}; }); };
 const getTotalDur = anims => (anims||[]).reduce((s,a)=>s+a.duration,0);
@@ -375,7 +377,15 @@ function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent, lo
   ctx.clearRect(0,0,w,h);
   if (!bgTransparent) {
     if (bgGrad&&bgGrad.enabled) {
-      const g=ctx.createLinearGradient(bgGrad.angle===0?0:bgGrad.angle===90?0:w/2,bgGrad.angle===0?0:bgGrad.angle===90?0:0,bgGrad.angle===0?w:bgGrad.angle===90?0:w/2,bgGrad.angle===0?0:bgGrad.angle===90?h:h);
+      let g;
+      if (bgGrad.style==="radial") {
+        g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,Math.hypot(w,h)/2);
+      } else {
+        // linear: angle in degrees, 0 = left→right, 90 = top→bottom
+        const a=((bgGrad.angle??90)%360)*Math.PI/180;
+        const dx=Math.cos(a),dy=Math.sin(a),r=(Math.abs(dx)*w+Math.abs(dy)*h)/2;
+        g=ctx.createLinearGradient(w/2-dx*r,h/2-dy*r,w/2+dx*r,h/2+dy*r);
+      }
       g.addColorStop(0,bgGrad.color1);g.addColorStop(1,bgGrad.color2);ctx.fillStyle=g;
     } else ctx.fillStyle=bgColor;
     ctx.fillRect(0,0,w,h);
@@ -445,7 +455,7 @@ function App() {
   const [canvasW,setCanvasW]=useState(144),[canvasH,setCanvasH]=useState(144);
   const [bgColor,setBgColor]=useState("#1a1a2e");
   const [bgTransparent,setBgTransparent]=useState(false);
-  const [bgGrad,setBgGrad]=useState({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90});
+  const [bgGrad,setBgGrad]=useState({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear"});
   const [layers,setLayers]=useState([]);
   const [selectedId,setSelectedId]=useState(null);
   const [playing,setPlaying]=useState(false);
@@ -495,10 +505,10 @@ function App() {
   const onMove=e=>{if(!drag)return;const r=canvasRef.current.getBoundingClientRect();const mx=(e.clientX-r.left)*canvasW/r.width,my=(e.clientY-r.top)*canvasH/r.height;upLayer(drag.id,{x:Math.round(drag.ox+mx-drag.sx),y:Math.round(drag.oy+my-drag.sy)});};
   const onUp=()=>setDrag(null);
 
-  const expPNG=()=>{const n=fileSafeName(ensureProjectName());const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent,totalDur);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
-  const expGIF=async()=>{const n=fileSafeName(ensureProjectName());setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
+  const expPNG=()=>{const n=fileSafeName(ensureProjectName());const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent,totalDur);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}_${tsStamp()}.png`;a.click();URL.revokeObjectURL(u);});};
+  const expGIF=async()=>{const n=fileSafeName(ensureProjectName());setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}_${tsStamp()}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
 
-  const expWebP=async()=>{const n=fileSafeName(ensureProjectName());setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
+  const expWebP=async()=>{const n=fileSafeName(ensureProjectName());setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}_${tsStamp()}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
 
   /* ── Project save / load ──
      Everything is serialised to JSON. Image layers hold a live HTMLImageElement (l.img),
@@ -527,16 +537,14 @@ function App() {
       layers:serial,
     };
     const u=URL.createObjectURL(new Blob([JSON.stringify(proj)],{type:"application/json"}));
-    const d=new Date(),p2=n=>String(n).padStart(2,"0");
-    const stamp=`${p2(d.getDate())}${p2(d.getMonth()+1)}${d.getFullYear()}${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
-    const a=document.createElement("a");a.href=u;a.download=`${fileSafeName(name)}_${stamp}.sdproj`;a.click();URL.revokeObjectURL(u);
+    const a=document.createElement("a");a.href=u;a.download=`${fileSafeName(name)}_${tsStamp()}.sdproj`;a.click();URL.revokeObjectURL(u);
   };
 
   const resetProject=()=>{
     if(layers.length&&!window.confirm("Reset the project? All layers and settings will be cleared."))return;
     setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
     setLayers([]);setCanvasW(144);setCanvasH(144);
-    setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90});
+    setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear"});
     setTotalDur(2);setFps(30);setShowEmoji(false);setShowSvg(false);setProjectName("");
   };
 
@@ -567,7 +575,7 @@ function App() {
         if(proj.background){
           setBgColor(proj.background.color||"#1a1a2e");
           setBgTransparent(!!proj.background.transparent);
-          setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,...(proj.background.gradient||{})});
+          setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear",...(proj.background.gradient||{})});
         }
         if(proj.timeline){setTotalDur(+proj.timeline.totalDur||2);setFps(Math.max(5,Math.min(60,+proj.timeline.fps||30)));}
         setLayers(restored);
@@ -633,7 +641,20 @@ function App() {
               <label style={{fontSize:11,color:"#888",display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={bgTransparent} onChange={e=>setBgTransparent(e.target.checked)}/>Transparent</label>
               {!bgTransparent&&<label style={{fontSize:11,color:"#888",display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={bgGrad.enabled} onChange={e=>setBgGrad({...bgGrad,enabled:e.target.checked})}/>Gradient</label>}
             </div>
-            {!bgTransparent&&bgGrad.enabled&&<div style={{display:"flex",gap:6,alignItems:"center"}}><input type="color" value={bgGrad.color1} onChange={e=>setBgGrad({...bgGrad,color1:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/><span style={{color:"#555",fontSize:11}}>to</span><input type="color" value={bgGrad.color2} onChange={e=>setBgGrad({...bgGrad,color2:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/></div>}
+            {!bgTransparent&&bgGrad.enabled&&<div style={{display:"flex",flexDirection:"column",gap:6}}>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input type="color" value={bgGrad.color1} onChange={e=>setBgGrad({...bgGrad,color1:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/>
+                <span style={{color:"#555",fontSize:11}}>to</span>
+                <input type="color" value={bgGrad.color2} onChange={e=>setBgGrad({...bgGrad,color2:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/>
+                <div style={{flex:1}}/>
+                {[{v:"linear",l:"Linear"},{v:"radial",l:"Radial"}].map(o=><button key={o.v} onClick={()=>setBgGrad({...bgGrad,style:o.v})} style={{padding:"2px 8px",fontSize:10,borderRadius:4,background:(bgGrad.style||"linear")===o.v?"#e94560":"#1e1e2e",color:(bgGrad.style||"linear")===o.v?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{o.l}</button>)}
+              </div>
+              {(bgGrad.style||"linear")==="linear"&&<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:10,color:"#777"}}>Angle</span>
+                <input type="range" min={0} max={360} step={5} value={bgGrad.angle??90} onChange={e=>setBgGrad({...bgGrad,angle:+e.target.value})} style={{flex:1}}/>
+                <span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{bgGrad.angle??90}°</span>
+              </div>}
+            </div>}
           </div>
           <div style={{padding:"10px 14px",borderBottom:"1px solid #1e1e2e"}}>
             <SL>Add Layer</SL>
