@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.7.1</title>
+<title>Stream Deck Button Creator v4.8.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -30,7 +30,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.7.1";
+const APP_VERSION = "4.8.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -477,6 +477,8 @@ function App() {
   const [selAnimIdx,setSelAnimIdx]=useState(0);
   const canvasRef=useRef(null),animRef=useRef(null),startRef=useRef(null),fileRef=useRef(null),projRef=useRef(null);
   const [drag,setDrag]=useState(null);
+  const [dragLayerId,setDragLayerId]=useState(null); // layer-list row being dragged for reorder
+  const [dragAnimIdx,setDragAnimIdx]=useState(null); // animation-chain step index being dragged
   const [zoomFit,setZoomFit]=useState(true);
   const [projectName,setProjectName]=useState("");
 
@@ -510,6 +512,8 @@ function App() {
   const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const s=Math.min(canvasW/img.width,canvasH/img.height,1),fw=img.width*s,fh=img.height*s;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh),aspectLock:true,aspect:fw/fh,scalePct:100,baseW:Math.round(fw),baseH:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
   const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id));if(selectedId===id)setSelectedId(null);};
   const mvLayer=(id,dir)=>setLayers(p=>{const i=p.findIndex(l=>l.id===id);if(i<0)return p;const n=i+dir;if(n<0||n>=p.length)return p;const a=[...p];[a[i],a[n]]=[a[n],a[i]];return a;});
+  const reorderLayer=(srcId,dstId)=>{if(!srcId||srcId===dstId)return;setLayers(p=>{const si=p.findIndex(l=>l.id===srcId),di=p.findIndex(l=>l.id===dstId);if(si<0||di<0)return p;const a=[...p];const[m]=a.splice(si,1);a.splice(di,0,m);return a;});};
+  const reorderAnim=(lid,from,to)=>{if(from===to||from==null)return;setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];if(from<0||from>=a.length||to<0||to>=a.length)return l;const[m]=a.splice(from,1);a.splice(to,0,m);return{...l,animations:a};}));setSelAnimIdx(to);};
   const dupeLayer=id=>{const src=layers.find(l=>l.id===id);if(!src)return;const l={...src,id:uid(),animations:(src.animations||[]).map(a=>({...a,id:uid()}))};setLayers(p=>[...p,l]);setSelectedId(l.id);};
 
   const onDown=e=>{const r=canvasRef.current.getBoundingClientRect();const sx=canvasW/r.width,sy=canvasH/r.height;const mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;for(let i=layers.length-1;i>=0;i--){const l=layers[i];if(!l.visible)continue;let hit;if(l.type==="text"||l.type==="emoji")hit=Math.abs(mx-l.x)<(l.width||l.fontSize*(l.text?.length||1)*0.6)/2&&Math.abs(my-l.y)<(l.height||l.fontSize)/2;else if(l.type==="circle")hit=Math.hypot(mx-(l.x+l.radius),my-(l.y+l.radius))<=l.radius;else hit=mx>=l.x&&mx<=l.x+(l.width||0)&&my>=l.y&&my<=l.y+(l.height||0);if(hit){setSelectedId(l.id);setDrag({id:l.id,sx:mx,sy:my,ox:l.x,oy:l.y});return;}}setSelectedId(null);};
@@ -694,11 +698,13 @@ function App() {
           <div style={{flex:1,overflowY:"auto",padding:"6px 0"}}>
             <div style={{padding:"0 14px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666"}}>Layers ({layers.length})</div>
             {!layers.length&&<div style={{padding:"20px 14px",textAlign:"center",color:"#444",fontSize:12}}>No layers yet</div>}
-            {[...layers].reverse().map(l=>(
-              <div key={l.id} onClick={()=>{setSelectedId(l.id);setSelAnimIdx(0);}} style={{padding:"6px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,background:selectedId===l.id?"#1e1e32":"transparent",borderLeft:selectedId===l.id?"2px solid #e94560":"2px solid transparent"}}>
+            {[...layers].reverse().map((l,j)=>(
+              <div key={l.id} draggable onDragStart={e=>{setDragLayerId(l.id);e.dataTransfer.effectAllowed="move";}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();reorderLayer(dragLayerId,l.id);setDragLayerId(null);}} onDragEnd={()=>setDragLayerId(null)} onClick={()=>{setSelectedId(l.id);setSelAnimIdx(0);}} style={{padding:"6px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,background:selectedId===l.id?"#1e1e32":"transparent",borderLeft:selectedId===l.id?"2px solid #e94560":"2px solid transparent",opacity:dragLayerId===l.id?0.4:1}}>
                 <span style={{fontSize:12,width:20,textAlign:"center",flexShrink:0}}>{l.type==="text"?"T":l.type==="rect"?"◼":l.type==="circle"?"●":l.type==="emoji"?l.text:l.type==="svg"?"✦":l.type==="ants"?"⬚":"📷"}</span>
                 <span style={{fontSize:11,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.type==="text"?l.text:l.type==="emoji"?"Emoji":l.type==="image"?"Image":l.type==="ants"?"Marching Ants":l.type==="svg"?(SVG_ICONS.find(i=>i.id===l.iconId)?.label.replace(/^[^\s]+\s/,"")||"Icon"):l.type}</span>
                 {(l.animations||[]).length>0&&<span style={{fontSize:9,color:"#e94560",background:"#2a1525",padding:"1px 4px",borderRadius:3}}>{l.animations.length}✦</span>}
+                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,1);}} disabled={j===0} title="Move up (towards front)" style={{background:"none",border:"none",color:j===0?"#333":"#777",cursor:j===0?"default":"pointer",fontSize:10,padding:"0 1px"}}>↑</button>
+                <button onClick={e=>{e.stopPropagation();mvLayer(l.id,-1);}} disabled={j===layers.length-1} title="Move down (towards back)" style={{background:"none",border:"none",color:j===layers.length-1?"#333":"#777",cursor:j===layers.length-1?"default":"pointer",fontSize:10,padding:"0 1px"}}>↓</button>
                 <button onClick={e=>{e.stopPropagation();upLayer(l.id,{visible:!l.visible});}} style={{background:"none",border:"none",color:l.visible?"#888":"#444",cursor:"pointer",fontSize:11}}>{l.visible?"👁":"👁‍🗨"}</button>
                 <button onClick={e=>{e.stopPropagation();delLayer(l.id);}} style={{background:"none",border:"none",color:"#e94560",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
               </div>
@@ -876,7 +882,7 @@ function App() {
                 <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
                   {!selAnims.length&&<div style={{fontSize:11,color:"#555",textAlign:"center",padding:8}}>No animations. Add one below.</div>}
                   {selAnims.map((a,i)=>(
-                    <div key={a.id} onClick={()=>setSelAnimIdx(i)} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 6px",borderRadius:5,cursor:"pointer",background:selAnimIdx===i?"#1e1e32":"#161620",border:selAnimIdx===i?`1px solid ${AC[a.type]||"#444"}`:"1px solid #1e1e2e"}}>
+                    <div key={a.id} draggable onDragStart={e=>{setDragAnimIdx(i);e.dataTransfer.effectAllowed="move";}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();reorderAnim(sel.id,dragAnimIdx,i);setDragAnimIdx(null);}} onDragEnd={()=>setDragAnimIdx(null)} onClick={()=>setSelAnimIdx(i)} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 6px",borderRadius:5,cursor:"pointer",background:selAnimIdx===i?"#1e1e32":"#161620",border:selAnimIdx===i?`1px solid ${AC[a.type]||"#444"}`:"1px solid #1e1e2e",opacity:dragAnimIdx===i?0.4:1}}>
                       <span style={{fontSize:9,fontWeight:700,color:"#fff",width:14,textAlign:"center",flexShrink:0,background:AC[a.type]||"#666",borderRadius:3,padding:"1px 0"}}>{i+1}</span>
                       <span style={{fontSize:10,flex:1,color:"#ccc",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{ANIM_TYPES.find(x=>x.id===a.type)?.label||a.type}</span>
                       <span style={{fontSize:9,color:"#666"}}>{a.duration.toFixed(1)}s</span>
