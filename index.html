@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.4.1</title>
+<title>Stream Deck Button Creator v4.5.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.4.1";
+const APP_VERSION = "4.5.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -285,7 +285,8 @@ function drawChain(ctx, layer, cw, ch, t, loopDur=0) {
     else lp=(t-step.start)/step.duration;
     if (lp>=1 && EXITS.includes(step.type)) { ctx.restore(); return; }
     if (lp<=0 && step===tl[0] && isEnt) { ctx.restore(); return; }
-    if (lp>0||!isEnt) opacity *= applySingle(ctx,step.type,lp,step.easing,layer,cw,ch,step);
+    // Steps that haven't started yet contribute nothing — applying an entrance at progress 0 would hide the layer (scale 0 / opacity 0 / off-canvas), which broke chains like rotateCW→bounceIn.
+    if (lp>0) opacity *= applySingle(ctx,step.type,lp,step.easing,layer,cw,ch,step);
   }
   ctx.globalAlpha = Math.max(0,Math.min(1,opacity));
   drawContent(ctx,layer,cw,ch,getTwProgress(anims,t),t,loopDur);
@@ -483,6 +484,10 @@ function App() {
   const selAnim = selAnims[selAnimIdx]||null;
 
   const upLayer = useCallback((id,u)=>setLayers(p=>p.map(l=>l.id===id?{...l,...u}:l)),[]);
+  /* Size edit that honours the aspect-ratio lock (image/svg layers). Typing a new W/H re-bases the scale slider at 100%. The locked ratio comes from l.aspect (stable across keystrokes) rather than the live w/h. */
+  const upSize = useCallback((l,dim,val)=>{val=Math.max(1,Math.round(val)||1);const lock=l.aspectLock??true;const asp=l.aspect||((l.width>0&&l.height>0)?l.width/l.height:1);const u={scalePct:100,aspect:asp};if(dim==="width"){u.width=val;if(lock)u.height=Math.max(1,Math.round(val/asp));else u.aspect=(l.height>0)?val/l.height:1;}else{u.height=val;if(lock)u.width=Math.max(1,Math.round(val*asp));else u.aspect=(val>0)?(l.width||1)/val:1;}u.baseW=u.width??l.width;u.baseH=u.height??l.height;u.baseX=l.x;u.baseY=l.y;u.lastSX=l.x;u.lastSY=l.y;upLayer(l.id,u);},[upLayer]);
+  /* Scale slider resizes around the layer's centre. The unrounded base-box origin (baseX/baseY) is the anchor so repeated slider moves don't accumulate rounding drift; lastSX/lastSY record the x/y the last scale wrote — if they no longer match, the layer was moved by other means (drag, centre, mirror, typed X/Y) and the anchor is re-captured from the current geometry. */
+  const upScale = useCallback((l,pct)=>{const bw=l.baseW??l.width,bh=l.baseH??l.height;const moved=l.baseX===undefined||l.x!==l.lastSX||l.y!==l.lastSY;const bx=moved?l.x+(l.width-bw)/2:l.baseX,by=moved?l.y+(l.height-bh)/2:l.baseY;const nw=Math.max(1,Math.round(bw*pct/100)),nh=Math.max(1,Math.round(bh*pct/100));const nx=Math.round(bx+(bw-nw)/2),ny=Math.round(by+(bh-nh)/2);upLayer(l.id,{scalePct:pct,baseW:bw,baseH:bh,baseX:bx,baseY:by,lastSX:nx,lastSY:ny,width:nw,height:nh,x:nx,y:ny});},[upLayer]);
   const upAnim = useCallback((lid,idx,u)=>setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a[idx]={...a[idx],...u};return{...l,animations:a};})),[]);
   const addAnim = useCallback((lid,type="fadeIn")=>{setLayers(p=>p.map(l=>l.id!==lid?l:{...l,animations:[...(l.animations||[]),makeAnimStep(type)]}));setSelAnimIdx(selAnims.length);},[selAnims.length]);
   const rmAnim = useCallback((lid,idx)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a.splice(idx,1);return{...l,animations:a};}));setSelAnimIdx(i=>Math.max(0,Math.min(i,selAnims.length-2)));},[selAnims.length]);
@@ -496,9 +501,9 @@ function App() {
   const addRect=()=>{const s=Math.round(canvasW*0.4);const l=mkBase({type:"rect",x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#e94560",radius:8,stroke:false,strokeColor:"#ffffff",strokeWidth:2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
   const addCircle=()=>{const r=Math.round(canvasW*0.2);const l=mkBase({type:"circle",x:Math.round(canvasW/2-r),y:Math.round(canvasH/2-r),radius:r,color:"#0f3460",stroke:false,strokeColor:"#fff",strokeWidth:2,width:r*2,height:r*2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
   const addEmoji=(emoji)=>{const l=mkBase({type:"emoji",text:emoji,x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/3),width:Math.round(canvasW/3),height:Math.round(canvasW/3)});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowEmoji(false);setSelAnimIdx(0);};
-  const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
+  const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,aspectLock:true,aspect:1,scalePct:100,baseW:s,baseH:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
   const addAnts=()=>{const m=Math.max(3,Math.round(canvasW*0.05));const l=mkBase({type:"ants",x:m,y:m,width:canvasW-m*2,height:canvasH-m*2,radius:8,antShape:"rect",antRounded:false,antSize:4,antLen:10,antGap:8,antSpeed:30,antDir:"cw",color:"#ffffff",antAlpha:1});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
-  const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const s=Math.min(canvasW/img.width,canvasH/img.height,1),fw=img.width*s,fh=img.height*s;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
+  const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const s=Math.min(canvasW/img.width,canvasH/img.height,1),fw=img.width*s,fh=img.height*s;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh),aspectLock:true,aspect:fw/fh,scalePct:100,baseW:Math.round(fw),baseH:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
   const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id));if(selectedId===id)setSelectedId(null);};
   const mvLayer=(id,dir)=>setLayers(p=>{const i=p.findIndex(l=>l.id===id);if(i<0)return p;const n=i+dir;if(n<0||n>=p.length)return p;const a=[...p];[a[i],a[n]]=[a[n],a[i]];return a;});
   const dupeLayer=id=>{const src=layers.find(l=>l.id===id);if(!src)return;const l={...src,id:uid(),animations:(src.animations||[]).map(a=>({...a,id:uid()}))};setLayers(p=>[...p,l]);setSelectedId(l.id);};
@@ -765,7 +770,13 @@ function App() {
                 return (<React.Fragment>
                 <PR l="X"><input type="number" value={sel.x} onChange={e=>upLayer(sel.id,{x:+e.target.value})} style={NI}/></PR>
                 <PR l="Y"><input type="number" value={sel.y} onChange={e=>upLayer(sel.id,{y:+e.target.value})} style={NI}/></PR>
-                {(sel.type==="rect"||sel.type==="image"||sel.type==="svg"||sel.type==="ants")&&<React.Fragment><PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR><PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR></React.Fragment>}
+                {(sel.type==="rect"||sel.type==="ants")&&<React.Fragment><PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR><PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR></React.Fragment>}
+                {(sel.type==="image"||sel.type==="svg")&&<React.Fragment>
+                  <PR l="W"><input type="number" value={sel.width} onChange={e=>upSize(sel,"width",+e.target.value)} style={NI}/></PR>
+                  <PR l="H"><input type="number" value={sel.height} onChange={e=>upSize(sel,"height",+e.target.value)} style={NI}/></PR>
+                  <PR l="Lock ratio"><input type="checkbox" checked={sel.aspectLock??true} onChange={e=>upLayer(sel.id,{aspectLock:e.target.checked,aspect:(sel.width>0&&sel.height>0)?sel.width/sel.height:1})} title="Keep W and H in proportion"/><span style={{fontSize:9,color:"#555"}}>keep proportions</span></PR>
+                  <PR l="Scale"><input type="range" min={10} max={300} value={sel.scalePct??100} onChange={e=>upScale(sel,+e.target.value)} style={{flex:1}} title="Scale relative to the set W/H, anchored at the layer's centre"/><span style={{fontSize:10,color:"#888",width:34,textAlign:"right"}}>{sel.scalePct??100}%</span></PR>
+                </React.Fragment>}
                 {sel.type==="circle"&&<PR l="Radius"><input type="number" value={sel.radius} onChange={e=>upLayer(sel.id,{radius:+e.target.value,width:+e.target.value*2,height:+e.target.value*2})} style={NI}/></PR>}
                 <PR l="Centre">
                   <button onClick={centerX} style={btnStyle} title="Centre horizontally">↔ H</button>
@@ -822,8 +833,8 @@ function App() {
                   </div>
                 </PR>
                 <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
-                <PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR>
-                <PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR>
+                <PR l="W"><input type="number" value={sel.width} onChange={e=>upSize(sel,"width",+e.target.value)} style={NI}/></PR>
+                <PR l="H"><input type="number" value={sel.height} onChange={e=>upSize(sel,"height",+e.target.value)} style={NI}/></PR>
                 <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={20} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
               </PS>}
 
