@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.2.0</title>
+<title>Stream Deck Button Creator v4.3.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.2.0";
+const APP_VERSION = "4.3.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -163,6 +163,12 @@ const SVG_CATS = [...new Set(SVG_ICONS.map(i=>i.cat))];
 const AC = {fadeIn:"#4ade80",fadeOut:"#f87171",slideInLeft:"#60a5fa",slideInRight:"#60a5fa",slideOutLeft:"#fb923c",slideOutRight:"#fb923c",slideInTop:"#60a5fa",slideInBottom:"#60a5fa",slideOutTop:"#fb923c",slideOutBottom:"#fb923c",scaleIn:"#a78bfa",scaleOut:"#f472b6",bounceIn:"#facc15",rotateIn:"#2dd4bf",rotateCW:"#2dd4bf",rotateCCW:"#2dd4bf",pulse:"#e879f9",shake:"#fb923c",wiggle:"#f59e0b",typewriter:"#34d399",hold:"#6b7280",move:"#38bdf8",animScale:"#a78bfa",animRotate:"#f0abfc",moveScale:"#818cf8",rotateScale:"#c084fc"};
 
 const uid = () => Math.random().toString(36).slice(2,9);
+
+/* Random project names: adjective + animal, e.g. "suspiciouscat" */
+const NAME_ADJECTIVES = ["suspicious","sleepy","grumpy","dapper","sneaky","turbo","wobbly","fluffy","cosmic","spicy","mellow","frisky","jazzy","salty","peppy","shifty","snazzy","bouncy","quirky","zesty","crafty","dizzy","perky","moody","plucky"];
+const NAME_ANIMALS = ["cat","dog","fox","owl","panda","otter","badger","ferret","gecko","koala","lemur","llama","moose","narwhal","penguin","raccoon","sloth","tiger","walrus","wombat","yak","hedgehog","platypus","axolotl","capybara"];
+const randomProjectName = () => NAME_ADJECTIVES[Math.floor(Math.random()*NAME_ADJECTIVES.length)]+NAME_ANIMALS[Math.floor(Math.random()*NAME_ANIMALS.length)];
+const fileSafeName = n => n.trim().replace(/[^a-zA-Z0-9-_]+/g,"_").replace(/^_+|_+$/g,"")||"untitled";
 const makeAnimStep = (type="fadeIn") => ({ id:uid(), type, duration:0.4, easing:"easeOut", ...(ANIM_PARAM_DEFAULTS[type]||{}) });
 const getTimeline = anims => { let t=0; return (anims||[]).map(a => { const s=t; t+=a.duration; return {...a,start:s,end:t}; }); };
 const getTotalDur = anims => (anims||[]).reduce((s,a)=>s+a.duration,0);
@@ -455,6 +461,10 @@ function App() {
   const canvasRef=useRef(null),animRef=useRef(null),startRef=useRef(null),fileRef=useRef(null),projRef=useRef(null);
   const [drag,setDrag]=useState(null);
   const [zoomFit,setZoomFit]=useState(true);
+  const [projectName,setProjectName]=useState("");
+
+  // Returns the project name, generating (and keeping) a random one if unset
+  const ensureProjectName=()=>{let n=projectName.trim();if(!n){n=randomProjectName();setProjectName(n);}return n;};
 
   const sel = layers.find(l=>l.id===selectedId);
   const selAnims = sel?.animations||[];
@@ -485,10 +495,10 @@ function App() {
   const onMove=e=>{if(!drag)return;const r=canvasRef.current.getBoundingClientRect();const mx=(e.clientX-r.left)*canvasW/r.width,my=(e.clientY-r.top)*canvasH/r.height;upLayer(drag.id,{x:Math.round(drag.ox+mx-drag.sx),y:Math.round(drag.oy+my-drag.sy)});};
   const onUp=()=>setDrag(null);
 
-  const expPNG=()=>{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent,totalDur);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
-  const expGIF=async()=>{setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
+  const expPNG=()=>{const n=fileSafeName(ensureProjectName());const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent,totalDur);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
+  const expGIF=async()=>{const n=fileSafeName(ensureProjectName());setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
 
-  const expWebP=async()=>{setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
+  const expWebP=async()=>{const n=fileSafeName(ensureProjectName());setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`${n}_${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
 
   /* ── Project save / load ──
      Everything is serialised to JSON. Image layers hold a live HTMLImageElement (l.img),
@@ -507,8 +517,10 @@ function App() {
       }
       return rest;
     });
+    const name=ensureProjectName();
     const proj={
       app:"StreamDeckButtonCreator",appVersion:APP_VERSION,format:1,savedAt:new Date().toISOString(),
+      name,
       canvas:{w:canvasW,h:canvasH},
       background:{color:bgColor,transparent:bgTransparent,gradient:bgGrad},
       timeline:{totalDur,fps},
@@ -517,7 +529,7 @@ function App() {
     const u=URL.createObjectURL(new Blob([JSON.stringify(proj)],{type:"application/json"}));
     const d=new Date(),p2=n=>String(n).padStart(2,"0");
     const stamp=`${p2(d.getDate())}${p2(d.getMonth()+1)}${d.getFullYear()}${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
-    const a=document.createElement("a");a.href=u;a.download=`SDBC_${stamp}.sdproj`;a.click();URL.revokeObjectURL(u);
+    const a=document.createElement("a");a.href=u;a.download=`${fileSafeName(name)}_${stamp}.sdproj`;a.click();URL.revokeObjectURL(u);
   };
 
   const resetProject=()=>{
@@ -525,7 +537,7 @@ function App() {
     setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
     setLayers([]);setCanvasW(144);setCanvasH(144);
     setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90});
-    setTotalDur(2);setFps(30);setShowEmoji(false);setShowSvg(false);
+    setTotalDur(2);setFps(30);setShowEmoji(false);setShowSvg(false);setProjectName("");
   };
 
   const loadProject=e=>{
@@ -550,6 +562,7 @@ function App() {
           return Promise.resolve(base);
         }));
         setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
+        setProjectName(typeof proj.name==="string"?proj.name:"");
         if(proj.canvas){setCanvasW(Math.max(16,+proj.canvas.w||144));setCanvasH(Math.max(16,+proj.canvas.h||144));}
         if(proj.background){
           setBgColor(proj.background.color||"#1a1a2e");
@@ -589,7 +602,10 @@ function App() {
       <div style={{background:"linear-gradient(135deg,#12121a,#1a1a2e)",borderBottom:"1px solid #2a2a3e",padding:"12px 24px",display:"flex",alignItems:"center",gap:16}}>
         <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#e94560,#c23152)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>SD</div>
         <div><div style={{fontWeight:700,fontSize:16,letterSpacing:"0.5px"}}>Stream Deck Button Creator <span style={{fontSize:11,fontWeight:400,color:"#666"}}>v{APP_VERSION}</span></div><div style={{fontSize:11,color:"#888",marginTop:1}}>Design animated buttons with chained animations</div></div>
-        <div style={{flex:1}}/>
+        <div style={{flex:1,display:"flex",justifyContent:"center"}}>
+          <input value={projectName} onChange={e=>setProjectName(e.target.value)} placeholder="Untitled project — click to name" spellCheck={false}
+            style={{background:"#1a1a28",border:"1px solid #2a2a3e",borderRadius:6,color:"#ddd",padding:"6px 12px",fontSize:13,textAlign:"center",width:"100%",maxWidth:300,outline:"none"}}/>
+        </div>
         <button onClick={saveProject} style={{...AB,padding:"6px 14px"}}>💾 Save Project</button>
         <button onClick={()=>projRef.current?.click()} style={{...AB,padding:"6px 14px"}}>📂 Open Project</button>
         <button onClick={resetProject} style={{...AB,padding:"6px 14px",background:"#3a1020",color:"#e94560",borderColor:"#5a1530"}}>🗑 Reset</button>
