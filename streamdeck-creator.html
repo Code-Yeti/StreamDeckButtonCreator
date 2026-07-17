@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.4.0</title>
+<title>Stream Deck Button Creator v4.4.1</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.4.0";
+const APP_VERSION = "4.4.1";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -386,7 +386,9 @@ function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent, lo
         const dx=Math.cos(a),dy=Math.sin(a),r=(Math.abs(dx)*w+Math.abs(dy)*h)/2;
         g=ctx.createLinearGradient(w/2-dx*r,h/2-dy*r,w/2+dx*r,h/2+dy*r);
       }
-      g.addColorStop(0,bgGrad.color1);g.addColorStop(1,bgGrad.color2);ctx.fillStyle=g;
+      // radial spread: how long colour1 stays dominant before blending starts
+      const first=bgGrad.style==="radial"?Math.max(0,Math.min(0.95,bgGrad.radialSpread??0)):0;
+      g.addColorStop(first,bgGrad.color1);g.addColorStop(1,bgGrad.color2);ctx.fillStyle=g;
     } else ctx.fillStyle=bgColor;
     ctx.fillRect(0,0,w,h);
   }
@@ -455,7 +457,7 @@ function App() {
   const [canvasW,setCanvasW]=useState(144),[canvasH,setCanvasH]=useState(144);
   const [bgColor,setBgColor]=useState("#1a1a2e");
   const [bgTransparent,setBgTransparent]=useState(false);
-  const [bgGrad,setBgGrad]=useState({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear"});
+  const [bgGrad,setBgGrad]=useState({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear",radialSpread:0});
   const [layers,setLayers]=useState([]);
   const [selectedId,setSelectedId]=useState(null);
   const [playing,setPlaying]=useState(false);
@@ -544,7 +546,7 @@ function App() {
     if(layers.length&&!window.confirm("Reset the project? All layers and settings will be cleared."))return;
     setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
     setLayers([]);setCanvasW(144);setCanvasH(144);
-    setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear"});
+    setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear",radialSpread:0});
     setTotalDur(2);setFps(30);setShowEmoji(false);setShowSvg(false);setProjectName("");
   };
 
@@ -575,7 +577,7 @@ function App() {
         if(proj.background){
           setBgColor(proj.background.color||"#1a1a2e");
           setBgTransparent(!!proj.background.transparent);
-          setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear",...(proj.background.gradient||{})});
+          setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,style:"linear",radialSpread:0,...(proj.background.gradient||{})});
         }
         if(proj.timeline){setTotalDur(+proj.timeline.totalDur||2);setFps(Math.max(5,Math.min(60,+proj.timeline.fps||30)));}
         setLayers(restored);
@@ -653,6 +655,11 @@ function App() {
                 <span style={{fontSize:10,color:"#777"}}>Angle</span>
                 <input type="range" min={0} max={360} step={5} value={bgGrad.angle??90} onChange={e=>setBgGrad({...bgGrad,angle:+e.target.value})} style={{flex:1}}/>
                 <span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{bgGrad.angle??90}°</span>
+              </div>}
+              {bgGrad.style==="radial"&&<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <span style={{fontSize:10,color:"#777"}} title="How far the first colour stays dominant before blending">Spread</span>
+                <input type="range" min={0} max={0.9} step={0.05} value={bgGrad.radialSpread??0} onChange={e=>setBgGrad({...bgGrad,radialSpread:+e.target.value})} style={{flex:1}}/>
+                <span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{Math.round((bgGrad.radialSpread??0)*100)}%</span>
               </div>}
             </div>}
           </div>
