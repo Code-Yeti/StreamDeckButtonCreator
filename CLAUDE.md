@@ -57,7 +57,8 @@ Rough map of the `<script type="text/babel">` block (top to bottom):
 
 - On every release: bump `APP_VERSION` **and** the `<title>` tag (two places),
   minor bump for features, patch for fixes. Commit message starts
-  `vX.Y.Z: summary`.
+  `vX.Y.Z: summary`. Also update `README.md`: the version badge, plus the
+  feature descriptions if the release changes anything user-visible.
 - Code style is dense/minified-ish single-line JS; match it rather than
   reformatting.
 - The user tests manually in the browser before versions are committed —
