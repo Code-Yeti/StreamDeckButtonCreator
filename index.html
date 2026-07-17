@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.5.1</title>
+<title>Stream Deck Button Creator v4.6.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -12,6 +12,9 @@
   input[type="color"]::-webkit-color-swatch { border: 1px solid #333; border-radius: 3px; }
   input[type="range"] { accent-color: #e94560; }
   input[type="checkbox"] { accent-color: #e94560; }
+  /* reserve room for the spin buttons so they never sit on top of the value; !important beats the inline padding from NI */
+  input[type="number"] { padding-right: 15px !important; }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
   select { cursor: pointer; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #111118; }
@@ -27,7 +30,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.5.1";
+const APP_VERSION = "4.6.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -486,9 +489,9 @@ function App() {
 
   const upLayer = useCallback((id,u)=>setLayers(p=>p.map(l=>l.id===id?{...l,...u}:l)),[]);
   /* Size edit that honours the aspect-ratio lock (image/svg layers). Typing a new W/H re-bases the scale slider at 100%. The locked ratio comes from l.aspect (stable across keystrokes) rather than the live w/h. */
-  const upSize = useCallback((l,dim,val)=>{val=Math.max(1,Math.round(val)||1);const lock=l.aspectLock??true;const asp=l.aspect||((l.width>0&&l.height>0)?l.width/l.height:1);const u={scalePct:100,aspect:asp};if(dim==="width"){u.width=val;if(lock)u.height=Math.max(1,Math.round(val/asp));else u.aspect=(l.height>0)?val/l.height:1;}else{u.height=val;if(lock)u.width=Math.max(1,Math.round(val*asp));else u.aspect=(val>0)?(l.width||1)/val:1;}u.baseW=u.width??l.width;u.baseH=u.height??l.height;u.baseX=l.x;u.baseY=l.y;u.lastSX=l.x;u.lastSY=l.y;upLayer(l.id,u);},[upLayer]);
+  const upSize = useCallback((l,dim,val)=>{val=Math.max(1,Math.round(val)||1);if(l.type==="circle"){upLayer(l.id,{radius:val,width:val*2,height:val*2,scalePct:100,baseW:val*2,baseH:val*2,baseX:l.x,baseY:l.y,lastSX:l.x,lastSY:l.y});return;}const lock=l.aspectLock??true;const asp=l.aspect||((l.width>0&&l.height>0)?l.width/l.height:1);const u={scalePct:100,aspect:asp};if(dim==="width"){u.width=val;if(lock)u.height=Math.max(1,Math.round(val/asp));else u.aspect=(l.height>0)?val/l.height:1;}else{u.height=val;if(lock)u.width=Math.max(1,Math.round(val*asp));else u.aspect=(val>0)?(l.width||1)/val:1;}u.baseW=u.width??l.width;u.baseH=u.height??l.height;u.baseX=l.x;u.baseY=l.y;u.lastSX=l.x;u.lastSY=l.y;if(l.type==="rect")u.baseR=l.radius??0;upLayer(l.id,u);},[upLayer]);
   /* Scale slider resizes around the layer's centre. The unrounded base-box origin (baseX/baseY) is the anchor so repeated slider moves don't accumulate rounding drift; lastSX/lastSY record the x/y the last scale wrote — if they no longer match, the layer was moved by other means (drag, centre, mirror, typed X/Y) and the anchor is re-captured from the current geometry. */
-  const upScale = useCallback((l,pct)=>{const bw=l.baseW??l.width,bh=l.baseH??l.height;const moved=l.baseX===undefined||l.x!==l.lastSX||l.y!==l.lastSY;const bx=moved?l.x+(l.width-bw)/2:l.baseX,by=moved?l.y+(l.height-bh)/2:l.baseY;const nw=Math.max(1,Math.round(bw*pct/100)),nh=Math.max(1,Math.round(bh*pct/100));const nx=Math.round(bx+(bw-nw)/2),ny=Math.round(by+(bh-nh)/2);upLayer(l.id,{scalePct:pct,baseW:bw,baseH:bh,baseX:bx,baseY:by,lastSX:nx,lastSY:ny,width:nw,height:nh,x:nx,y:ny});},[upLayer]);
+  const upScale = useCallback((l,pct)=>{const bw=l.baseW??l.width,bh=l.baseH??l.height;const moved=l.baseX===undefined||l.x!==l.lastSX||l.y!==l.lastSY;const bx=moved?l.x+(l.width-bw)/2:l.baseX,by=moved?l.y+(l.height-bh)/2:l.baseY;let nw=Math.max(1,Math.round(bw*pct/100)),nh=Math.max(1,Math.round(bh*pct/100));const u={};if(l.type==="circle"){const nr=Math.max(1,Math.round(bw*pct/200));nw=nh=nr*2;u.radius=nr;}else if(l.type==="rect"){const br=l.baseR??l.radius??0;if(br){u.radius=Math.round(br*pct/100);u.baseR=br;}}const nx=Math.round(bx+(bw-nw)/2),ny=Math.round(by+(bh-nh)/2);upLayer(l.id,{...u,scalePct:pct,baseW:bw,baseH:bh,baseX:bx,baseY:by,lastSX:nx,lastSY:ny,width:nw,height:nh,x:nx,y:ny});},[upLayer]);
   const upAnim = useCallback((lid,idx,u)=>setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a[idx]={...a[idx],...u};return{...l,animations:a};})),[]);
   const addAnim = useCallback((lid,type="fadeIn")=>{setLayers(p=>p.map(l=>l.id!==lid?l:{...l,animations:[...(l.animations||[]),makeAnimStep(type)]}));setSelAnimIdx(selAnims.length);},[selAnims.length]);
   const rmAnim = useCallback((lid,idx)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a.splice(idx,1);return{...l,animations:a};}));setSelAnimIdx(i=>Math.max(0,Math.min(i,selAnims.length-2)));},[selAnims.length]);
@@ -499,8 +502,8 @@ function App() {
 
   const mkBase = extra=>({id:uid(),visible:true,animations:[],animStartDelay:0,rotation:0,opacity:1,...extra});
   const addText=()=>{const l=mkBase({type:"text",text:"TEXT",x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/5),fontFamily:"Arial Black",color:"#ffffff",bold:true,italic:false,shadow:true,stroke:false,strokeColor:"#000000",strokeWidth:2,align:"center",width:canvasW,height:Math.round(canvasW/5)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
-  const addRect=()=>{const s=Math.round(canvasW*0.4);const l=mkBase({type:"rect",x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#e94560",radius:8,stroke:false,strokeColor:"#ffffff",strokeWidth:2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
-  const addCircle=()=>{const r=Math.round(canvasW*0.2);const l=mkBase({type:"circle",x:Math.round(canvasW/2-r),y:Math.round(canvasH/2-r),radius:r,color:"#0f3460",stroke:false,strokeColor:"#fff",strokeWidth:2,width:r*2,height:r*2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  const addRect=()=>{const s=Math.round(canvasW*0.4);const l=mkBase({type:"rect",x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,aspectLock:true,aspect:1,scalePct:100,baseW:s,baseH:s,color:"#e94560",radius:8,stroke:false,strokeColor:"#ffffff",strokeWidth:2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  const addCircle=()=>{const r=Math.round(canvasW*0.2);const l=mkBase({type:"circle",x:Math.round(canvasW/2-r),y:Math.round(canvasH/2-r),radius:r,color:"#0f3460",stroke:false,strokeColor:"#fff",strokeWidth:2,width:r*2,height:r*2,scalePct:100,baseW:r*2,baseH:r*2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
   const addEmoji=(emoji)=>{const l=mkBase({type:"emoji",text:emoji,x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/3),width:Math.round(canvasW/3),height:Math.round(canvasW/3)});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowEmoji(false);setSelAnimIdx(0);};
   const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,aspectLock:true,aspect:1,scalePct:100,baseW:s,baseH:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
   const addAnts=()=>{const m=Math.max(3,Math.round(canvasW*0.05));const l=mkBase({type:"ants",x:m,y:m,width:canvasW-m*2,height:canvasH-m*2,radius:8,antShape:"rect",antRounded:false,antSize:4,antLen:10,antGap:8,antSpeed:30,antDir:"cw",color:"#ffffff",antAlpha:1});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
@@ -600,7 +603,7 @@ function App() {
   };
 
   const cs=zoomFit?Math.min(280/canvasW,280/canvasH):1;
-  const NI={background:"#1a1a28",border:"1px solid #2a2a3e",borderRadius:4,color:"#ddd",padding:"4px 6px",fontSize:11,width:56,outline:"none"};
+  const NI={background:"#1a1a28",border:"1px solid #2a2a3e",borderRadius:4,color:"#ddd",padding:"4px 6px",fontSize:11,width:68,outline:"none"};
   const AB={padding:"4px 10px",fontSize:11,borderRadius:5,background:"#1e1e2e",color:"#ccc",border:"1px solid #2a2a3e",cursor:"pointer",whiteSpace:"nowrap"};
   const TB={background:"none",border:"none",color:"#777",cursor:"pointer",fontSize:10,padding:"0 2px"};
   const EB={padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,background:"linear-gradient(135deg,#1e1e2e,#2a2a3e)",color:"#ddd",border:"1px solid #3a3a4e",cursor:"pointer"};
@@ -720,7 +723,7 @@ function App() {
               <button onClick={()=>{setPlaying(false);setCurTime(0);}} style={{background:"#1e1e2e",border:"1px solid #2a2a3e",borderRadius:6,padding:"4px 10px",color:"#aaa",cursor:"pointer",fontSize:11}}>⏹ Reset</button>
               <span style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{curTime.toFixed(1)}s / {totalDur}s</span>
               <div style={{flex:1}}/>
-              <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>Dur <input type="number" value={totalDur} min={0.5} max={30} step={0.5} onChange={e=>setTotalDur(+e.target.value)} style={{...NI,width:48}}/>s</label>
+              <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>Dur <input type="number" value={totalDur} min={0.5} max={30} step={0.5} onChange={e=>setTotalDur(+e.target.value)} style={{...NI,width:56}}/>s</label>
               <button onClick={fitDuration} title="Set duration to match the longest animation chain" style={{background:"#1e1e2e",border:"1px solid #2a2a3e",borderRadius:6,padding:"4px 10px",color:"#aaa",cursor:"pointer",fontSize:11}}>⇥ Fit</button>
             </div>
             <div style={{height:6,background:"#1e1e2e",borderRadius:3,position:"relative",cursor:"pointer",marginBottom:8}} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setCurTime(((e.clientX-r.left)/r.width)*totalDur);}}>
@@ -742,7 +745,7 @@ function App() {
             <button onClick={expWebP} disabled={exportingWebP} style={{...EB,background:exportingWebP?"#333":"linear-gradient(135deg,#3a7bd5,#2a5b9d)",cursor:exportingWebP?"wait":"pointer"}}>{exportingWebP?"⏳ Encoding...":"🎞 Export WebP"}</button>
             <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>FPS
               {[15,30,60].map(v=><button key={v} onClick={()=>setFps(v)} style={{padding:"3px 8px",fontSize:10,borderRadius:4,background:fps===v?"#e94560":"#1e1e2e",color:fps===v?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{v}</button>)}
-              <input type="number" value={fps} min={5} max={60} onChange={e=>setFps(Math.max(5,Math.min(60,+e.target.value)))} style={{...NI,width:40}}/>
+              <input type="number" value={fps} min={5} max={60} onChange={e=>setFps(Math.max(5,Math.min(60,+e.target.value)))} style={{...NI,width:50}}/>
             </label>
           </div>
         </div>
@@ -771,14 +774,17 @@ function App() {
                 return (<React.Fragment>
                 <PR l="X"><input type="number" value={sel.x} onChange={e=>upLayer(sel.id,{x:+e.target.value})} style={NI}/></PR>
                 <PR l="Y"><input type="number" value={sel.y} onChange={e=>upLayer(sel.id,{y:+e.target.value})} style={NI}/></PR>
-                {(sel.type==="rect"||sel.type==="ants")&&<React.Fragment><PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR><PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR></React.Fragment>}
-                {(sel.type==="image"||sel.type==="svg")&&<React.Fragment>
+                {sel.type==="ants"&&<React.Fragment><PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR><PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR></React.Fragment>}
+                {(sel.type==="rect"||sel.type==="image"||sel.type==="svg")&&<React.Fragment>
                   <PR l="W"><input type="number" value={sel.width} onChange={e=>upSize(sel,"width",+e.target.value)} style={NI}/></PR>
                   <PR l="H"><input type="number" value={sel.height} onChange={e=>upSize(sel,"height",+e.target.value)} style={NI}/></PR>
                   <PR l="Lock ratio"><input type="checkbox" checked={sel.aspectLock??true} onChange={e=>upLayer(sel.id,{aspectLock:e.target.checked,aspect:(sel.width>0&&sel.height>0)?sel.width/sel.height:1})} title="Keep W and H in proportion"/><span style={{fontSize:9,color:"#555"}}>keep proportions</span></PR>
                   <PR l="Scale"><input type="range" min={10} max={300} value={sel.scalePct??100} onChange={e=>upScale(sel,+e.target.value)} style={{flex:1}} title="Scale relative to the set W/H, anchored at the layer's centre"/><span style={{fontSize:10,color:"#888",width:34,textAlign:"right"}}>{sel.scalePct??100}%</span></PR>
                 </React.Fragment>}
-                {sel.type==="circle"&&<PR l="Radius"><input type="number" value={sel.radius} onChange={e=>upLayer(sel.id,{radius:+e.target.value,width:+e.target.value*2,height:+e.target.value*2})} style={NI}/></PR>}
+                {sel.type==="circle"&&<React.Fragment>
+                  <PR l="Radius"><input type="number" value={sel.radius} onChange={e=>upSize(sel,"radius",+e.target.value)} style={NI}/></PR>
+                  <PR l="Scale"><input type="range" min={10} max={300} value={sel.scalePct??100} onChange={e=>upScale(sel,+e.target.value)} style={{flex:1}} title="Scale relative to the set radius, anchored at the circle's centre"/><span style={{fontSize:10,color:"#888",width:34,textAlign:"right"}}>{sel.scalePct??100}%</span></PR>
+                </React.Fragment>}
                 <PR l="Centre">
                   <button onClick={centerX} style={btnStyle} title="Centre horizontally">↔ H</button>
                   <button onClick={centerY} style={btnStyle} title="Centre vertically">↕ V</button>
@@ -790,7 +796,7 @@ function App() {
                 </PR>
                 <PR l="Rotation">
                   <input type="range" min={-180} max={180} value={sel.rotation||0} onChange={e=>upLayer(sel.id,{rotation:+e.target.value})} style={{flex:1}}/>
-                  <input type="number" value={sel.rotation||0} min={-180} max={180} onChange={e=>upLayer(sel.id,{rotation:+e.target.value})} style={{...NI,width:44}}/>
+                  <input type="number" value={sel.rotation||0} min={-180} max={180} onChange={e=>upLayer(sel.id,{rotation:+e.target.value})} style={{...NI,width:54}}/>
                   <span style={{fontSize:9,color:"#555"}}>°</span>
                   {(sel.rotation||0)!==0&&<button onClick={()=>upLayer(sel.id,{rotation:0})} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:9,padding:"0 2px"}} title="Reset rotation">↺</button>}
                 </PR>
@@ -812,7 +818,7 @@ function App() {
                   <label style={{fontSize:11,color:"#aaa",display:"flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={sel.shadow} onChange={e=>upLayer(sel.id,{shadow:e.target.checked})}/>S</label>
                 </PR>
                 <PR l="Align">{["left","center","right"].map(a=><button key={a} onClick={()=>upLayer(sel.id,{align:a})} style={{...AB,padding:"2px 8px",background:sel.align===a?"#e94560":"#1e1e2e",color:sel.align===a?"#fff":"#aaa"}}>{a==="left"?"◀":a==="center"?"●":"▶"}</button>)}</PR>
-                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:48}}/></React.Fragment>}</PR>
               </PS>}
 
               {sel.type==="emoji"&&<PS t="Emoji">
@@ -836,7 +842,7 @@ function App() {
                 <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
                 <PR l="W"><input type="number" value={sel.width} onChange={e=>upSize(sel,"width",+e.target.value)} style={NI}/></PR>
                 <PR l="H"><input type="number" value={sel.height} onChange={e=>upSize(sel,"height",+e.target.value)} style={NI}/></PR>
-                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={20} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={20} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:48}}/></React.Fragment>}</PR>
               </PS>}
 
               {sel.type==="ants"&&<PS t="Marching Ants">
@@ -861,8 +867,8 @@ function App() {
 
               {(sel.type==="rect"||sel.type==="circle")&&<PS t="Appearance">
                 <PR l="Fill"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
-                {sel.type==="rect"&&<PR l="Radius"><input type="range" min={0} max={Math.round(Math.min(sel.width,sel.height)/2)} value={sel.radius||0} onChange={e=>upLayer(sel.id,{radius:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:20,textAlign:"right"}}>{sel.radius||0}</span></PR>}
-                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+                {sel.type==="rect"&&<PR l="Radius"><input type="range" min={0} max={Math.round(Math.min(sel.width,sel.height)/2)} value={sel.radius||0} onChange={e=>upLayer(sel.id,{radius:+e.target.value,baseR:+e.target.value*100/(sel.scalePct??100)})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:20,textAlign:"right"}}>{sel.radius||0}</span></PR>}
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:48}}/></React.Fragment>}</PR>
               </PS>}
 
               {/* ANIMATION CHAIN */}
@@ -897,11 +903,11 @@ function App() {
                 <PR l="Duration"><input type="range" min={0.05} max={5} step={0.05} value={selAnim.duration} onChange={e=>upAnim(sel.id,selAnimIdx,{duration:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{selAnim.duration.toFixed(2)}s</span></PR>
                 <PR l="Easing"><select value={selAnim.easing||"easeOut"} onChange={e=>upAnim(sel.id,selAnimIdx,{easing:e.target.value})} style={{...NI,width:"100%"}}>{EASING_OPTIONS.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></PR>
                 {/* Wiggle params */}
-                {selAnim.type==="wiggle"&&<PR l="Amount"><input type="range" min={1} max={90} value={selAnim.wiggleAmount??15} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.wiggleAmount??15} min={1} max={90} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>}
+                {selAnim.type==="wiggle"&&<PR l="Amount"><input type="range" min={1} max={90} value={selAnim.wiggleAmount??15} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.wiggleAmount??15} min={1} max={90} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{...NI,width:54}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>}
                 {/* Move params */}
                 {(selAnim.type==="move"||selAnim.type==="moveScale")&&<React.Fragment>
-                  <PR l="Move X"><input type="range" min={-300} max={300} value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
-                  <PR l="Move Y"><input type="range" min={-300} max={300} value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
+                  <PR l="Move X"><input type="range" min={-300} max={300} value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{...NI,width:54}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
+                  <PR l="Move Y"><input type="range" min={-300} max={300} value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{...NI,width:54}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
                 </React.Fragment>}
                 {/* Scale params */}
                 {(selAnim.type==="animScale"||selAnim.type==="moveScale"||selAnim.type==="rotateScale")&&<React.Fragment>
@@ -910,8 +916,8 @@ function App() {
                 </React.Fragment>}
                 {/* Rotate params */}
                 {(selAnim.type==="animRotate"||selAnim.type==="rotateScale")&&<React.Fragment>
-                  <PR l="Rot From"><input type="range" min={-720} max={720} value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
-                  <PR l="Rot To"><input type="range" min={-720} max={720} value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
+                  <PR l="Rot From"><input type="range" min={-720} max={720} value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{...NI,width:54}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
+                  <PR l="Rot To"><input type="range" min={-720} max={720} value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{...NI,width:54}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
                 </React.Fragment>}
               </PS>}
 

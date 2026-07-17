@@ -4,7 +4,7 @@ Design animated button images for your Elgato Stream Deck — right in the
 browser, in a single HTML file. No install, no build step, no server: download
 `index.html`, open it in Chrome or Edge, and start designing.
 
-![version](https://img.shields.io/badge/version-4.5.1-e94560)
+![version](https://img.shields.io/badge/version-4.6.0-e94560)
 
 ## What it does
 
@@ -21,9 +21,9 @@ it live, then export a static PNG or an animated GIF/WebP sized for your deck.
   size, gap, speed, direction and transparency, snapped to loop seamlessly
 
 Layers can be moved by dragging on the canvas, reordered, duplicated, rotated,
-faded, mirrored and centred. Images and icons can lock their aspect ratio
-(on by default) and be resized with a scale slider that works from the
-layer's centre.
+faded, mirrored and centred. Images, icons and rectangles can lock their
+aspect ratio (on by default), and these plus circles can be resized with a
+scale slider that works from the layer's centre.
 
 ### Animation
 Each layer gets a chain of animation steps played in sequence — fade, slide,
