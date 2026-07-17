@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stream Deck Button Creator v3.0.0</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; }
+  input[type="color"] { -webkit-appearance: none; border: none; cursor: pointer; }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type="color"]::-webkit-color-swatch { border: 1px solid #333; border-radius: 3px; }
+  input[type="range"] { accent-color: #e94560; }
+  input[type="checkbox"] { accent-color: #e94560; }
+  select { cursor: pointer; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #111118; }
+  ::-webkit-scrollbar-thumb { background: #2a2a3e; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a4e; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const APP_VERSION = "3.0.0";
+
+const PRESETS = [
+  { label: "SD Standard", w: 72, h: 72 },
+  { label: "SD XL", w: 96, h: 96 },
+  { label: "SD + / MK.2", w: 144, h: 144 },
+  { label: "SD Neo", w: 128, h: 128 },
+];
+
+const ANIM_TYPES = [
+  { id: "fadeIn", label: "Fade In" },
+  { id: "fadeOut", label: "Fade Out" },
+  { id: "slideInLeft", label: "Slide In Left" },
+  { id: "slideInRight", label: "Slide In Right" },
+  { id: "slideOutLeft", label: "Slide Out Left" },
+  { id: "slideOutRight", label: "Slide Out Right" },
+  { id: "slideInTop", label: "Slide In Top" },
+  { id: "slideInBottom", label: "Slide In Bottom" },
+  { id: "slideOutTop", label: "Slide Out Top" },
+  { id: "slideOutBottom", label: "Slide Out Bottom" },
+  { id: "scaleIn", label: "Scale In" },
+  { id: "scaleOut", label: "Scale Out" },
+  { id: "bounceIn", label: "Bounce In" },
+  { id: "rotateIn", label: "Rotate In" },
+  { id: "rotateCW", label: "Rotate CW" },
+  { id: "rotateCCW", label: "Rotate CCW" },
+  { id: "pulse", label: "Pulse" },
+  { id: "shake", label: "Shake" },
+  { id: "typewriter", label: "Typewriter" },
+  { id: "hold", label: "Hold (pause)" },
+  { id: "move", label: "Move" },
+  { id: "animScale", label: "Scale" },
+  { id: "animRotate", label: "Rotate" },
+  { id: "moveScale", label: "Move & Scale" },
+  { id: "rotateScale", label: "Rotate & Scale" },
+];
+
+// Which animation types have extra configurable params
+const ANIM_PARAM_TYPES = new Set(["move","animScale","animRotate","moveScale","rotateScale"]);
+// Default extra params per type
+const ANIM_PARAM_DEFAULTS = {
+  move:        { moveX: 0, moveY: -20 },
+  animScale:   { scaleFrom: 1, scaleTo: 1.5 },
+  animRotate:  { rotFrom: 0, rotTo: 360 },
+  moveScale:   { moveX: 0, moveY: -20, scaleFrom: 1, scaleTo: 1.5 },
+  rotateScale: { rotFrom: 0, rotTo: 360, scaleFrom: 1, scaleTo: 1.5 },
+};
+
+const EF = {
+  linear: t => t,
+  easeInOut: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+  easeOut: t => t*(2-t),
+  easeIn: t => t*t,
+  bounce: t => {
+    if (t<1/2.75) return 7.5625*t*t;
+    if (t<2/2.75) return 7.5625*(t-=1.5/2.75)*t+0.75;
+    if (t<2.5/2.75) return 7.5625*(t-=2.25/2.75)*t+0.9375;
+    return 7.5625*(t-=2.625/2.75)*t+0.984375;
+  },
+};
+
+const EASING_OPTIONS = [
+  { id: "easeOut", label: "Ease Out" },
+  { id: "easeIn", label: "Ease In" },
+  { id: "easeInOut", label: "Ease In-Out" },
+  { id: "linear", label: "Linear" },
+  { id: "bounce", label: "Bounce" },
+];
+
+const FONTS = ["Arial","Arial Black","Verdana","Tahoma","Trebuchet MS","Impact","Georgia","Times New Roman","Courier New","Comic Sans MS","Lucida Console","Palatino"];
+const EMOJIS = ["🎮","🎯","🔊","🔇","🎵","🎤","📷","💡","⚙️","🔧","▶️","⏸️","⏹️","⏭️","⏮️","🔴","🟢","🔵","⬆️","⬇️","⬅️","➡️","✅","❌","⭐","🔥","💀","👁️","🎬","📁","💾","📋","🖥️","🌙","☀️","🔔","🔕","📌","🏠","💬"];
+/* SVG Icon shape paths — all defined in a 100x100 viewBox, drawn with canvas transforms */
+const SVG_ICONS = [
+  { id:"arrow-right",    label:"→ Arrow Right",     cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,sw=s*0.18,hw=s*0.5,hh=s*0.3; ctx.beginPath();ctx.moveTo(cx-hw/2,cy-sw/2);ctx.lineTo(cx+hw/2-hh*0.55,cy-sw/2);ctx.lineTo(cx+hw/2-hh*0.55,cy-hh/2);ctx.lineTo(cx+hw/2,cy);ctx.lineTo(cx+hw/2-hh*0.55,cy+hh/2);ctx.lineTo(cx+hw/2-hh*0.55,cy+sw/2);ctx.lineTo(cx-hw/2,cy+sw/2);ctx.closePath(); } },
+  { id:"arrow-left",     label:"← Arrow Left",      cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,sw=s*0.18,hw=s*0.5,hh=s*0.3; ctx.beginPath();ctx.moveTo(cx+hw/2,cy-sw/2);ctx.lineTo(cx-hw/2+hh*0.55,cy-sw/2);ctx.lineTo(cx-hw/2+hh*0.55,cy-hh/2);ctx.lineTo(cx-hw/2,cy);ctx.lineTo(cx-hw/2+hh*0.55,cy+hh/2);ctx.lineTo(cx-hw/2+hh*0.55,cy+sw/2);ctx.lineTo(cx+hw/2,cy+sw/2);ctx.closePath(); } },
+  { id:"arrow-up",       label:"↑ Arrow Up",         cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,sw=s*0.18,hh=s*0.5,hw=s*0.3; ctx.beginPath();ctx.moveTo(cx-sw/2,cy+hh/2);ctx.lineTo(cx-sw/2,cy-hh/2+hw*0.55);ctx.lineTo(cx-hw/2,cy-hh/2+hw*0.55);ctx.lineTo(cx,cy-hh/2);ctx.lineTo(cx+hw/2,cy-hh/2+hw*0.55);ctx.lineTo(cx+sw/2,cy-hh/2+hw*0.55);ctx.lineTo(cx+sw/2,cy+hh/2);ctx.closePath(); } },
+  { id:"arrow-down",     label:"↓ Arrow Down",       cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,sw=s*0.18,hh=s*0.5,hw=s*0.3; ctx.beginPath();ctx.moveTo(cx-sw/2,cy-hh/2);ctx.lineTo(cx-sw/2,cy+hh/2-hw*0.55);ctx.lineTo(cx-hw/2,cy+hh/2-hw*0.55);ctx.lineTo(cx,cy+hh/2);ctx.lineTo(cx+hw/2,cy+hh/2-hw*0.55);ctx.lineTo(cx+sw/2,cy+hh/2-hw*0.55);ctx.lineTo(cx+sw/2,cy-hh/2);ctx.closePath(); } },
+  { id:"chevron-right",  label:"❯ Chevron Right",    cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.45,cx=x+w/2,cy=y+h/2,t=s*0.22; ctx.beginPath();ctx.moveTo(cx-s*0.4,cy-s);ctx.lineTo(cx+s*0.4,cy);ctx.lineTo(cx-s*0.4,cy+s);ctx.lineTo(cx-s*0.4+t*2,cy+s);ctx.lineTo(cx+s*0.4+t*2,cy);ctx.lineTo(cx-s*0.4+t*2,cy-s);ctx.closePath(); } },
+  { id:"double-arrow",   label:"⇒ Double Arrow",     cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,hw=s*0.22,hh=s*0.28,sw=s*0.14; ctx.beginPath();ctx.moveTo(cx-s*0.42,cy-sw/2);ctx.lineTo(cx-s*0.04,cy-sw/2);ctx.lineTo(cx-s*0.04,cy-hh/2);ctx.lineTo(cx+s*0.22,cy);ctx.lineTo(cx-s*0.04,cy+hh/2);ctx.lineTo(cx-s*0.04,cy+sw/2);ctx.lineTo(cx-s*0.42,cy+sw/2);ctx.lineTo(cx-s*0.42,cy+hh/2);ctx.lineTo(cx-s*0.22,cy);ctx.lineTo(cx-s*0.42,cy-hh/2);ctx.closePath(); } },
+  { id:"play",           label:"▶ Play",              cat:"Media",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.45,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx-s*0.7,cy-s);ctx.lineTo(cx+s,cy);ctx.lineTo(cx-s*0.7,cy+s);ctx.closePath(); } },
+  { id:"pause",          label:"⏸ Pause",             cat:"Media",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2,bw=s*0.35,bh=s*1.8,gap=s*0.3; ctx.beginPath();ctx.rect(cx-gap/2-bw,cy-bh/2,bw,bh);ctx.rect(cx+gap/2,cy-bh/2,bw,bh); } },
+  { id:"stop",           label:"⏹ Stop",              cat:"Media",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.rect(cx-s,cy-s,s*2,s*2); } },
+  { id:"skip-fwd",       label:"⏭ Skip Fwd",          cat:"Media",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2,bw=s*0.18; ctx.beginPath();ctx.moveTo(cx-s,cy-s);ctx.lineTo(cx+s*0.2,cy);ctx.lineTo(cx-s,cy+s);ctx.closePath();ctx.moveTo(cx+s*0.2,cy-s);ctx.lineTo(cx+s*0.2+bw,cy-s);ctx.lineTo(cx+s*0.2+bw,cy+s);ctx.lineTo(cx+s*0.2,cy+s);ctx.closePath(); } },
+  { id:"skip-back",      label:"⏮ Skip Back",         cat:"Media",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2,bw=s*0.18; ctx.beginPath();ctx.moveTo(cx+s,cy-s);ctx.lineTo(cx-s*0.2,cy);ctx.lineTo(cx+s,cy+s);ctx.closePath();ctx.moveTo(cx-s*0.2,cy-s);ctx.lineTo(cx-s*0.2-bw,cy-s);ctx.lineTo(cx-s*0.2-bw,cy+s);ctx.lineTo(cx-s*0.2,cy+s);ctx.closePath(); } },
+  { id:"record",         label:"⏺ Record",             cat:"Media",    draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2); } },
+  { id:"star",           label:"★ Star",               cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const r1=Math.min(w,h)*0.46,r2=r1*0.4,cx=x+w/2,cy=y+h/2,n=5; ctx.beginPath();for(let i=0;i<n*2;i++){const a=i*Math.PI/n-Math.PI/2,r=i%2===0?r1:r2;ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}ctx.closePath(); } },
+  { id:"star6",          label:"✦ 6-Star",             cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const r1=Math.min(w,h)*0.46,r2=r1*0.45,cx=x+w/2,cy=y+h/2,n=6; ctx.beginPath();for(let i=0;i<n*2;i++){const a=i*Math.PI/n-Math.PI/2,r=i%2===0?r1:r2;ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}ctx.closePath(); } },
+  { id:"diamond",        label:"◆ Diamond",            cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.46,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx,cy-s);ctx.lineTo(cx+s*0.65,cy);ctx.lineTo(cx,cy+s);ctx.lineTo(cx-s*0.65,cy);ctx.closePath(); } },
+  { id:"triangle",       label:"▲ Triangle",           cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.48,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx,cy-s);ctx.lineTo(cx+s*0.9,cy+s*0.7);ctx.lineTo(cx-s*0.9,cy+s*0.7);ctx.closePath(); } },
+  { id:"hexagon",        label:"⬡ Hexagon",            cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.46,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<6;i++){const a=i*Math.PI/3-Math.PI/6;ctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);}ctx.closePath(); } },
+  { id:"shield",         label:"🛡 Shield",             cat:"Shapes",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.46,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx-s,cy-s);ctx.lineTo(cx+s,cy-s);ctx.lineTo(cx+s,cy+s*0.1);ctx.quadraticCurveTo(cx+s,cy+s*0.8,cx,cy+s);ctx.quadraticCurveTo(cx-s,cy+s*0.8,cx-s,cy+s*0.1);ctx.closePath(); } },
+  { id:"checkmark",      label:"✓ Checkmark",          cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.4,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx-s,cy);ctx.lineTo(cx-s*0.25,cy+s*0.7);ctx.lineTo(cx+s,cy-s*0.5);ctx.lineWidth=s*0.28;ctx.stroke();ctx.lineWidth=1; return "stroke-only"; } },
+  { id:"cross",          label:"✕ Cross",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.36,cx=x+w/2,cy=y+h/2,t=s*0.3; ctx.beginPath();ctx.moveTo(cx-s,cy-s+t);ctx.lineTo(cx-t,cy);ctx.lineTo(cx-s,cy+s-t);ctx.lineTo(cx-s+t,cy+s);ctx.lineTo(cx,cy+t);ctx.lineTo(cx+s-t,cy+s);ctx.lineTo(cx+s,cy+s-t);ctx.lineTo(cx+t,cy);ctx.lineTo(cx+s,cy-s+t);ctx.lineTo(cx+s-t,cy-s);ctx.lineTo(cx,cy-t);ctx.lineTo(cx-s+t,cy-s);ctx.closePath(); } },
+  { id:"plus",           label:"+ Plus",               cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2,t=s*0.3; ctx.beginPath();ctx.rect(cx-t/2,cy-s,t,s*2);ctx.rect(cx-s,cy-t/2,s*2,t); } },
+  { id:"minus",          label:"— Minus",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2,t=s*0.3; ctx.beginPath();ctx.rect(cx-s,cy-t/2,s*2,t); } },
+  { id:"lightning",      label:"⚡ Lightning",          cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.44,cx=x+w/2,cy=y+h/2; ctx.beginPath();ctx.moveTo(cx+s*0.2,cy-s);ctx.lineTo(cx-s*0.3,cy+s*0.1);ctx.lineTo(cx+s*0.05,cy+s*0.1);ctx.lineTo(cx-s*0.2,cy+s);ctx.lineTo(cx+s*0.3,cy-s*0.1);ctx.lineTo(cx-s*0.05,cy-s*0.1);ctx.closePath(); } },
+  { id:"heart",          label:"♥ Heart",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2-s*0.1; ctx.beginPath();ctx.moveTo(cx,cy+s*0.7);ctx.bezierCurveTo(cx-s*1.1,cy,cx-s*1.1,cy-s,cx,cy-s*0.4);ctx.bezierCurveTo(cx+s*1.1,cy-s,cx+s*1.1,cy,cx,cy+s*0.7);ctx.closePath(); } },
+  { id:"mic",            label:"🎤 Mic",                cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.44,cx=x+w/2,cy=y+h/2,mw=s*0.45,mh=s*0.65,mr=mw/2; ctx.beginPath();ctx.roundRect(cx-mr,cy-s,mw,mh,mr);ctx.fill();ctx.beginPath();ctx.arc(cx,cy-s+mh,s*0.58,0,Math.PI);ctx.moveTo(cx-s*0.58,cy-s+mh);ctx.lineTo(cx-s*0.58,cy-s+mh+s*0.15);ctx.moveTo(cx+s*0.58,cy-s+mh);ctx.lineTo(cx+s*0.58,cy-s+mh+s*0.15);ctx.moveTo(cx,cy-s+mh+s*0.15);ctx.lineTo(cx,cy+s*0.5);return "stroke-mic"; } },
+  { id:"power",          label:"⏻ Power",              cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,cx=x+w/2,cy=y+h/2,lw=r*0.22; ctx.beginPath();ctx.arc(cx,cy+r*0.08,r,Math.PI*0.25,Math.PI*0.75,false);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx,cy-r*0.18);ctx.lineTo(cx,cy-r);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1; return "stroke-only"; } },
+  { id:"gear",           label:"⚙ Gear",               cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const r=Math.min(w,h)*0.38,ir=r*0.55,teeth=8,cx=x+w/2,cy=y+h/2; ctx.beginPath();for(let i=0;i<teeth*2;i++){const a=i*Math.PI/teeth,ro=i%2===0?r:r*0.78;ctx.lineTo(cx+Math.cos(a)*ro,cy+Math.sin(a)*ro);}ctx.closePath();ctx.fill();ctx.beginPath();ctx.arc(cx,cy,ir,0,Math.PI*2);return "cutout"; } },
+  { id:"eye",            label:"👁 Eye",                cat:"Symbols",  draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2,cy=y+h/2,er=s*0.38; ctx.beginPath();ctx.moveTo(cx-s,cy);ctx.bezierCurveTo(cx-s,cy-s*0.6,cx+s,cy-s*0.6,cx+s,cy);ctx.bezierCurveTo(cx+s,cy+s*0.6,cx-s,cy+s*0.6,cx-s,cy);ctx.fill();ctx.fillStyle="inherit";ctx.beginPath();ctx.arc(cx,cy,er,0,Math.PI*2);return "eye"; } },
+  { id:"vol-up",         label:"🔊 Volume Up",          cat:"Audio",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2-s*0.15,cy=y+h/2,sw=s*0.3,sh=s*0.55; ctx.beginPath();ctx.rect(cx-s*0.6,cy-sh*0.45,sw,sh*0.9);ctx.moveTo(cx-s*0.3,cy-sh*0.45);ctx.lineTo(cx+s*0.1,cy-sh);ctx.lineTo(cx+s*0.1,cy+sh);ctx.lineTo(cx-s*0.3,cy+sh*0.45);ctx.closePath();ctx.fill();ctx.beginPath();ctx.arc(cx+s*0.25,cy,s*0.35,Math.PI*0.3,-Math.PI*0.3,false);ctx.arc(cx+s*0.25,cy,s*0.55,Math.PI*-0.3,Math.PI*0.3,true);ctx.fill(); } },
+  { id:"vol-mute",       label:"🔇 Mute",               cat:"Audio",    draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h)*0.42,cx=x+w/2-s*0.15,cy=y+h/2,sh=s*0.55,sw=s*0.3; ctx.beginPath();ctx.rect(cx-s*0.6,cy-sh*0.45,sw,sh*0.9);ctx.moveTo(cx-s*0.3,cy-sh*0.45);ctx.lineTo(cx+s*0.1,cy-sh);ctx.lineTo(cx+s*0.1,cy+sh);ctx.lineTo(cx-s*0.3,cy+sh*0.45);ctx.closePath();ctx.fill();const lw=s*0.18,x1=cx+s*0.35,y1=cy-s*0.35,x2=cx+s*0.75,y2=cy+s*0.35;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.moveTo(x2,y1);ctx.lineTo(x1,y2);ctx.lineWidth=lw;ctx.stroke();ctx.lineWidth=1; } },
+];
+const SVG_CATS = [...new Set(SVG_ICONS.map(i=>i.cat))];
+
+const AC = {fadeIn:"#4ade80",fadeOut:"#f87171",slideInLeft:"#60a5fa",slideInRight:"#60a5fa",slideOutLeft:"#fb923c",slideOutRight:"#fb923c",slideInTop:"#60a5fa",slideInBottom:"#60a5fa",slideOutTop:"#fb923c",slideOutBottom:"#fb923c",scaleIn:"#a78bfa",scaleOut:"#f472b6",bounceIn:"#facc15",rotateIn:"#2dd4bf",rotateCW:"#2dd4bf",rotateCCW:"#2dd4bf",pulse:"#e879f9",shake:"#fb923c",typewriter:"#34d399",hold:"#6b7280",move:"#38bdf8",animScale:"#a78bfa",animRotate:"#f0abfc",moveScale:"#818cf8",rotateScale:"#c084fc"};
+
+const uid = () => Math.random().toString(36).slice(2,9);
+const makeAnimStep = (type="fadeIn") => ({ id:uid(), type, duration:0.4, easing:"easeOut", ...(ANIM_PARAM_DEFAULTS[type]||{}) });
+const getTimeline = anims => { let t=0; return (anims||[]).map(a => { const s=t; t+=a.duration; return {...a,start:s,end:t}; }); };
+const getTotalDur = anims => (anims||[]).reduce((s,a)=>s+a.duration,0);
+
+const ENTRANCES = ["fadeIn","slideInLeft","slideInRight","slideInTop","slideInBottom","scaleIn","bounceIn","rotateIn","typewriter"];
+const EXITS = ["fadeOut","scaleOut","slideOutLeft","slideOutRight","slideOutTop","slideOutBottom"];
+
+// Get the visual centre of a layer regardless of type.
+// text/emoji store x,y as the draw-centre already; all others store x,y as top-left.
+function layerCenter(layer) {
+  if (layer.type==="text"||layer.type==="emoji") return { cx: layer.x, cy: layer.y };
+  return { cx: layer.x+(layer.width||0)/2, cy: layer.y+(layer.height||0)/2 };
+}
+
+function applySingle(ctx, type, progress, easing, layer, cw, ch, step) {
+  const ef = EF[easing]||EF.easeOut;
+  const p = ef(Math.min(1,Math.max(0,progress)));
+  const { cx, cy } = layerCenter(layer);
+  switch(type) {
+    case "fadeIn": return p;
+    case "fadeOut": return 1-p;
+    case "slideInLeft": ctx.translate(-cw*(1-p),0); return 1;
+    case "slideInRight": ctx.translate(cw*(1-p),0); return 1;
+    case "slideOutLeft": ctx.translate(-cw*p,0); return 1;
+    case "slideOutRight": ctx.translate(cw*p,0); return 1;
+    case "slideInTop": ctx.translate(0,-ch*(1-p)); return 1;
+    case "slideInBottom": ctx.translate(0,ch*(1-p)); return 1;
+    case "slideOutTop": ctx.translate(0,-ch*p); return 1;
+    case "slideOutBottom": ctx.translate(0,ch*p); return 1;
+    case "scaleIn": ctx.translate(cx,cy); ctx.scale(p,p); ctx.translate(-cx,-cy); return 1;
+    case "scaleOut": { const s=1-p; ctx.translate(cx,cy); ctx.scale(s,s); ctx.translate(-cx,-cy); return 1; }
+    case "bounceIn": { const bp=EF.bounce(Math.min(1,Math.max(0,progress))); ctx.translate(cx,cy); ctx.scale(bp,bp); ctx.translate(-cx,-cy); return 1; }
+    case "rotateIn": ctx.translate(cx,cy); ctx.rotate((1-p)*Math.PI*2); ctx.scale(p,p); ctx.translate(-cx,-cy); return 1;
+    case "rotateCW": ctx.translate(cx,cy); ctx.rotate(p*Math.PI*2); ctx.translate(-cx,-cy); return 1;
+    case "rotateCCW": ctx.translate(cx,cy); ctx.rotate(-p*Math.PI*2); ctx.translate(-cx,-cy); return 1;
+    case "pulse": { const s2=1+0.2*Math.sin(p*Math.PI); ctx.translate(cx,cy); ctx.scale(s2,s2); ctx.translate(-cx,-cy); return 1; }
+    case "shake": { ctx.translate(Math.sin(p*Math.PI*8)*(1-p)*6,0); return 1; }
+    case "move": {
+      const mx=(step?.moveX||0)*p, my=(step?.moveY||0)*p;
+      ctx.translate(mx,my); return 1;
+    }
+    case "animScale": {
+      const sf=(step?.scaleFrom??1), st=(step?.scaleTo??1.5);
+      const sc=sf+(st-sf)*p;
+      ctx.translate(cx,cy); ctx.scale(sc,sc); ctx.translate(-cx,-cy); return 1;
+    }
+    case "animRotate": {
+      const rf=(step?.rotFrom??0), rt=(step?.rotTo??360);
+      const angle=(rf+(rt-rf)*p)*Math.PI/180;
+      ctx.translate(cx,cy); ctx.rotate(angle); ctx.translate(-cx,-cy); return 1;
+    }
+    case "moveScale": {
+      const mx=(step?.moveX||0)*p, my=(step?.moveY||0)*p;
+      const sf=(step?.scaleFrom??1), st=(step?.scaleTo??1.5);
+      const sc=sf+(st-sf)*p;
+      ctx.translate(cx+mx,cy+my); ctx.scale(sc,sc); ctx.translate(-cx,-cy); return 1;
+    }
+    case "rotateScale": {
+      const rf=(step?.rotFrom??0), rt=(step?.rotTo??360);
+      const angle=(rf+(rt-rf)*p)*Math.PI/180;
+      const sf=(step?.scaleFrom??1), st=(step?.scaleTo??1.5);
+      const sc=sf+(st-sf)*p;
+      ctx.translate(cx,cy); ctx.rotate(angle); ctx.scale(sc,sc); ctx.translate(-cx,-cy); return 1;
+    }
+    default: return 1;
+  }
+}
+
+function getTwProgress(anims, t) {
+  for (const s of getTimeline(anims)) {
+    if (s.type==="typewriter") {
+      if (t<s.start) return 0;
+      if (t>=s.end) return 1;
+      return (EF[s.easing||"linear"]||EF.linear)(Math.min(1,Math.max(0,(t-s.start)/s.duration)));
+    }
+  }
+  return 1;
+}
+
+function drawChain(ctx, layer, cw, ch, t) {
+  const anims = layer.animations||[];
+  const { cx, cy } = layerCenter(layer);
+  const baseRot = (layer.rotation||0)*Math.PI/180;
+  const baseOpacity = layer.opacity??1;
+
+  if (!anims.length) {
+    ctx.save();
+    if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
+    if (baseOpacity!==1) ctx.globalAlpha = Math.max(0,Math.min(1,baseOpacity));
+    drawContent(ctx,layer,cw,ch,1);
+    ctx.restore();
+    return;
+  }
+  const tl = getTimeline(anims);
+  const isEnt = ENTRANCES.includes(anims[0]?.type);
+  if (isEnt && t<0) return;
+  ctx.save();
+  // Apply base rotation first
+  if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
+  // Apply base opacity before animation-driven opacity
+  let opacity = baseOpacity;
+  for (const step of tl) {
+    let lp;
+    if (t<step.start) lp=0;
+    else if (t>=step.end) lp=1;
+    else lp=(t-step.start)/step.duration;
+    if (lp>=1 && EXITS.includes(step.type)) { ctx.restore(); return; }
+    if (lp<=0 && step===tl[0] && isEnt) { ctx.restore(); return; }
+    if (lp>0||!isEnt) opacity *= applySingle(ctx,step.type,lp,step.easing,layer,cw,ch,step);
+  }
+  ctx.globalAlpha = Math.max(0,Math.min(1,opacity));
+  drawContent(ctx,layer,cw,ch,getTwProgress(anims,t));
+  ctx.restore();
+}
+
+function drawContent(ctx, L, cw, ch, tw) {
+  if (L.type==="text") {
+    const txt = tw<1?L.text.slice(0,Math.ceil(L.text.length*tw)):L.text;
+    ctx.font=`${L.bold?"bold ":""}${L.italic?"italic ":""}${L.fontSize}px ${L.fontFamily}`;
+    ctx.fillStyle=L.color; ctx.textAlign=L.align||"center"; ctx.textBaseline="middle";
+    if (L.shadow){ctx.shadowColor="rgba(0,0,0,0.6)";ctx.shadowBlur=4;ctx.shadowOffsetX=1;ctx.shadowOffsetY=1;}
+    if (L.stroke){ctx.strokeStyle=L.strokeColor||"#000";ctx.lineWidth=L.strokeWidth||2;ctx.strokeText(txt,L.x,L.y);}
+    ctx.fillText(txt,L.x,L.y);
+  } else if (L.type==="rect") {
+    ctx.fillStyle=L.color;
+    if (L.radius){rrect(ctx,L.x,L.y,L.width,L.height,L.radius);ctx.fill();}else ctx.fillRect(L.x,L.y,L.width,L.height);
+    if (L.stroke){ctx.strokeStyle=L.strokeColor||"#000";ctx.lineWidth=L.strokeWidth||2;if(L.radius){rrect(ctx,L.x,L.y,L.width,L.height,L.radius);ctx.stroke();}else ctx.strokeRect(L.x,L.y,L.width,L.height);}
+  } else if (L.type==="circle") {
+    ctx.fillStyle=L.color; ctx.beginPath(); ctx.arc(L.x+L.radius,L.y+L.radius,L.radius,0,Math.PI*2); ctx.fill();
+    if (L.stroke){ctx.strokeStyle=L.strokeColor||"#000";ctx.lineWidth=L.strokeWidth||2;ctx.stroke();}
+  } else if (L.type==="emoji") {
+    ctx.font=`${L.fontSize}px serif`; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(L.text,L.x,L.y);
+  } else if (L.type==="image"&&L.img) {
+    try{ctx.drawImage(L.img,L.x,L.y,L.width,L.height);}catch(e){}
+  } else if (L.type==="svg") {
+    const icon = SVG_ICONS.find(i=>i.id===L.iconId);
+    if (icon) {
+      ctx.save();
+      ctx.fillStyle = L.color;
+      ctx.strokeStyle = L.strokeColor||L.color;
+      ctx.lineWidth = L.strokeWidth||2;
+      const result = icon.draw(ctx, L.x, L.y, L.width, L.height);
+      if (result==="stroke-only") {
+        // already stroked in draw fn, nothing
+      } else if (result==="cutout") {
+        ctx.fillStyle = L.color;
+        ctx.fill("evenodd");
+      } else if (result==="eye") {
+        // eye white part already filled in draw fn, now fill pupil dark
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fill();
+      } else if (result==="stroke-mic") {
+        ctx.lineWidth = L.strokeWidth||Math.min(L.width,L.height)*0.07;
+        ctx.strokeStyle = L.color;
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = L.color;
+        ctx.fill();
+      }
+      if (L.stroke && result!=="stroke-only" && result!=="stroke-mic") {
+        ctx.strokeStyle = L.strokeColor||"#fff";
+        ctx.lineWidth = L.strokeWidth||2;
+        icon.draw(ctx, L.x, L.y, L.width, L.height);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function rrect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
+
+function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent) {
+  const ctx=canvas.getContext("2d"), w=canvas.width, h=canvas.height;
+  ctx.clearRect(0,0,w,h);
+  if (!bgTransparent) {
+    if (bgGrad&&bgGrad.enabled) {
+      const g=ctx.createLinearGradient(bgGrad.angle===0?0:bgGrad.angle===90?0:w/2,bgGrad.angle===0?0:bgGrad.angle===90?0:0,bgGrad.angle===0?w:bgGrad.angle===90?0:w/2,bgGrad.angle===0?0:bgGrad.angle===90?h:h);
+      g.addColorStop(0,bgGrad.color1);g.addColorStop(1,bgGrad.color2);ctx.fillStyle=g;
+    } else ctx.fillStyle=bgColor;
+    ctx.fillRect(0,0,w,h);
+  }
+  layers.forEach(L=>{if(!L.visible)return;drawChain(ctx,L,w,h,absTime-(L.animStartDelay||0));});
+}
+
+class GIFEncoder {
+  constructor(w,h,transparent=false){this.w=w;this.h=h;this.frames=[];this.delay=50;this.transparent=transparent;}
+  setDelay(ms){this.delay=ms;}
+  addFrame(ctx){const d=ctx.getImageData(0,0,this.w,this.h);const{palette:p,indexed:i}=this.quantize(d.data);this.frames.push({palette:p,indexed:i,delay:this.delay});}
+  quantize(px){const cm=new Map(),idx=new Uint8Array(this.w*this.h),pal=[];const t0=this.transparent?1:0;if(this.transparent)pal.push([0,0,0]);for(let i=0;i<px.length;i+=4){if(this.transparent&&px[i+3]<128){idx[i/4]=0;continue;}const r=px[i]&0xF8,g=px[i+1]&0xFC,b=px[i+2]&0xF8,k=(r<<16)|(g<<8)|b;if(!cm.has(k)){if(pal.length>=256){let best=t0,bd=1e9;for(let j=t0;j<pal.length;j++){const dr=pal[j][0]-r,dg=pal[j][1]-g,db=pal[j][2]-b,d2=dr*dr+dg*dg+db*db;if(d2<bd){bd=d2;best=j;}}idx[i/4]=best;continue;}cm.set(k,pal.length);pal.push([r,g,b]);}idx[i/4]=cm.get(k);}while(pal.length<256)pal.push([0,0,0]);return{palette:pal,indexed:idx};}
+  toBlob(){const b=[],w=v=>{b.push(v&0xFF,(v>>8)&0xFF);};[0x47,0x49,0x46,0x38,0x39,0x61].forEach(x=>b.push(x));w(this.w);w(this.h);b.push(0x70,0,0);b.push(0x21,0xFF,0x0B);[..."NETSCAPE2.0"].forEach(c=>b.push(c.charCodeAt(0)));b.push(3,1);w(0);b.push(0);this.frames.forEach(f=>{b.push(0x21,0xF9,4,this.transparent?0x09:0);w(Math.round(f.delay/10));b.push(0,0);b.push(0x2C);w(0);w(0);w(this.w);w(this.h);b.push(0x87);f.palette.forEach(c=>{b.push(c[0],c[1],c[2]);});b.push(8);const lzw=this.lzwEnc(f.indexed,8);let o=0;while(o<lzw.length){const ch=Math.min(255,lzw.length-o);b.push(ch);for(let i=0;i<ch;i++)b.push(lzw[o++]);}b.push(0);});b.push(0x3B);return new Blob([new Uint8Array(b)],{type:"image/gif"});}
+  lzwEnc(idx,mc){const cc=1<<mc,eoi=cc+1;let cs=mc+1,nc=eoi+1;const t=new Map(),out=[];let bits=0,bp=0;const emit=c=>{bits|=c<<bp;bp+=cs;while(bp>=8){out.push(bits&0xFF);bits>>=8;bp-=8;}};const reset=()=>{t.clear();for(let i=0;i<cc;i++)t.set(String(i),i);nc=eoi+1;cs=mc+1;};emit(cc);reset();let prev=String(idx[0]);for(let i=1;i<idx.length;i++){const curr=String(idx[i]),comb=prev+","+curr;if(t.has(comb))prev=comb;else{emit(t.get(prev));if(nc<4096){t.set(comb,nc++);if(nc>(1<<cs)&&cs<12)cs++;}else{emit(cc);reset();}prev=curr;}}emit(t.get(prev));emit(eoi);if(bp>0)out.push(bits&0xFF);return out;}
+}
+
+/* Animated WebP muxer: takes per-frame WebP files (browser-encoded) and wraps them
+   in a RIFF container with VP8X + ANIM + ANMF chunks. Full 8-bit alpha is preserved. */
+function buildAnimWebP(frames, w, h, delayMs) {
+  const u24=v=>[v&255,(v>>8)&255,(v>>16)&255];
+  const u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255];
+  const cc4=s=>[...s].map(ch=>ch.charCodeAt(0));
+  const mkChunk=(cc,payload)=>{const out=new Uint8Array(8+payload.length+(payload.length&1));out.set(cc4(cc),0);out.set(u32(payload.length),4);out.set(payload,8);return out;};
+  const parse=buf=>{const dv=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);const cs=[];let o=12;while(o+8<=buf.length){const cc=String.fromCharCode(buf[o],buf[o+1],buf[o+2],buf[o+3]);const sz=dv.getUint32(o+4,true);cs.push({cc,data:buf.subarray(o+8,Math.min(o+8+sz,buf.length))});o+=8+sz+(sz&1);}return cs;};
+  let hasAlpha=false;
+  const anmfs=frames.map(f=>{
+    // keep only the image-data chunks (ALPH must stay ahead of VP8; order is preserved)
+    const imgChunks=parse(f).filter(c=>c.cc==="ALPH"||c.cc==="VP8 "||c.cc==="VP8L");
+    if(imgChunks.some(c=>c.cc==="ALPH"||c.cc==="VP8L"))hasAlpha=true;
+    const hdr=[...u24(0),...u24(0),...u24(w-1),...u24(h-1),...u24(delayMs),0x02]; // flags 0x02 = no blend
+    const encoded=imgChunks.map(c=>mkChunk(c.cc,c.data));
+    const payload=new Uint8Array(16+encoded.reduce((s,e)=>s+e.length,0));
+    payload.set(hdr,0);let o=16;encoded.forEach(e=>{payload.set(e,o);o+=e.length;});
+    return mkChunk("ANMF",payload);
+  });
+  const vp8x=mkChunk("VP8X",new Uint8Array([(hasAlpha?0x10:0)|0x02,0,0,0,...u24(w-1),...u24(h-1)]));
+  const anim=mkChunk("ANIM",new Uint8Array([0,0,0,0,0,0])); // bg colour 0, loop count 0 = infinite
+  const bodyLen=vp8x.length+anim.length+anmfs.reduce((s,a)=>s+a.length,0);
+  const out=new Uint8Array(12+bodyLen);
+  out.set(cc4("RIFF"),0);out.set(u32(4+bodyLen),4);out.set(cc4("WEBP"),8);
+  let o=12;[vp8x,anim,...anmfs].forEach(ch=>{out.set(ch,o);o+=ch.length;});
+  return new Blob([out],{type:"image/webp"});
+}
+
+function SvgIconPreview({icon, size=32}) {
+  const ref = useRef(null);
+  useEffect(()=>{
+    const c = ref.current; if(!c) return;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0,0,size,size);
+    ctx.fillStyle="#ffffff"; ctx.strokeStyle="#ffffff"; ctx.lineWidth=size*0.07;
+    const result = icon.draw(ctx, 2, 2, size-4, size-4);
+    if (result==="stroke-only"||result==="stroke-mic") { ctx.strokeStyle="#fff"; ctx.stroke(); }
+    else if (result==="cutout") { ctx.fillStyle="#fff"; ctx.fill("evenodd"); }
+    else { ctx.fillStyle="#fff"; ctx.fill(); }
+  },[icon,size]);
+  return <canvas ref={ref} width={size} height={size} style={{width:size,height:size}}/>;
+}
+
+/* ── Helper Components ── */
+function SL({children}){return (<div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666",marginBottom:8}}>{children}</div>);}
+function PS({t,children}){return (<div style={{marginBottom:14}}><div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,color:"#555",marginBottom:6,borderBottom:"1px solid #1e1e2e",paddingBottom:4}}>{t}</div><div style={{display:"flex",flexDirection:"column",gap:5}}>{children}</div></div>);}
+function PR({l,children}){return (<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:10,color:"#777",width:48,flexShrink:0}}>{l}</span><div style={{display:"flex",alignItems:"center",gap:4,flex:1}}>{children}</div></div>);}
+
+/* ── Main App ── */
+function App() {
+  const [canvasW,setCanvasW]=useState(144),[canvasH,setCanvasH]=useState(144);
+  const [bgColor,setBgColor]=useState("#1a1a2e");
+  const [bgTransparent,setBgTransparent]=useState(false);
+  const [bgGrad,setBgGrad]=useState({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90});
+  const [layers,setLayers]=useState([]);
+  const [selectedId,setSelectedId]=useState(null);
+  const [playing,setPlaying]=useState(false);
+  const [curTime,setCurTime]=useState(0);
+  const [totalDur,setTotalDur]=useState(2);
+  const [exporting,setExporting]=useState(false);
+  const [exportingWebP,setExportingWebP]=useState(false);
+  const [showEmoji,setShowEmoji]=useState(false);
+  const [showSvg,setShowSvg]=useState(false);
+  const [svgCat,setSvgCat]=useState("Arrows");
+  const [fps,setFps]=useState(30);
+  const [selAnimIdx,setSelAnimIdx]=useState(0);
+  const canvasRef=useRef(null),animRef=useRef(null),startRef=useRef(null),fileRef=useRef(null);
+  const [drag,setDrag]=useState(null);
+
+  const sel = layers.find(l=>l.id===selectedId);
+  const selAnims = sel?.animations||[];
+  const selAnim = selAnims[selAnimIdx]||null;
+
+  const upLayer = useCallback((id,u)=>setLayers(p=>p.map(l=>l.id===id?{...l,...u}:l)),[]);
+  const upAnim = useCallback((lid,idx,u)=>setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a[idx]={...a[idx],...u};return{...l,animations:a};})),[]);
+  const addAnim = useCallback((lid,type="fadeIn")=>{setLayers(p=>p.map(l=>l.id!==lid?l:{...l,animations:[...(l.animations||[]),makeAnimStep(type)]}));setSelAnimIdx(selAnims.length);},[selAnims.length]);
+  const rmAnim = useCallback((lid,idx)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a.splice(idx,1);return{...l,animations:a};}));setSelAnimIdx(i=>Math.max(0,Math.min(i,selAnims.length-2)));},[selAnims.length]);
+  const mvAnim = useCallback((lid,idx,dir)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];const ni=idx+dir;if(ni<0||ni>=a.length)return l;[a[idx],a[ni]]=[a[ni],a[idx]];return{...l,animations:a};}));setSelAnimIdx(i=>i+dir);},[]);
+
+  useEffect(()=>{const c=canvasRef.current;if(!c)return;c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,playing?curTime:999,bgTransparent);},[layers,canvasW,canvasH,bgColor,bgGrad,curTime,playing,bgTransparent]);
+  useEffect(()=>{if(!playing){if(animRef.current)cancelAnimationFrame(animRef.current);return;}startRef.current=performance.now()-curTime*1000;const tick=now=>{const e=(now-startRef.current)/1000;if(e>=totalDur){setCurTime(0);startRef.current=now;}else setCurTime(e);animRef.current=requestAnimationFrame(tick);};animRef.current=requestAnimationFrame(tick);return()=>{if(animRef.current)cancelAnimationFrame(animRef.current);};},[playing,totalDur]);
+
+  const mkBase = extra=>({id:uid(),visible:true,animations:[],animStartDelay:0,rotation:0,opacity:1,...extra});
+  const addText=()=>{const l=mkBase({type:"text",text:"TEXT",x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/5),fontFamily:"Arial Black",color:"#ffffff",bold:true,italic:false,shadow:true,stroke:false,strokeColor:"#000000",strokeWidth:2,align:"center",width:canvasW,height:Math.round(canvasW/5)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  const addRect=()=>{const s=Math.round(canvasW*0.4);const l=mkBase({type:"rect",x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#e94560",radius:8,stroke:false,strokeColor:"#ffffff",strokeWidth:2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  const addCircle=()=>{const r=Math.round(canvasW*0.2);const l=mkBase({type:"circle",x:Math.round(canvasW/2-r),y:Math.round(canvasH/2-r),radius:r,color:"#0f3460",stroke:false,strokeColor:"#fff",strokeWidth:2,width:r*2,height:r*2});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};
+  const addEmoji=(emoji)=>{const l=mkBase({type:"emoji",text:emoji,x:canvasW/2,y:canvasH/2,fontSize:Math.round(canvasW/3),width:Math.round(canvasW/3),height:Math.round(canvasW/3)});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowEmoji(false);setSelAnimIdx(0);};
+  const addSvgShape=(icon)=>{const s=Math.round(canvasW*0.55);const l=mkBase({type:"svg",iconId:icon.id,x:Math.round((canvasW-s)/2),y:Math.round((canvasH-s)/2),width:s,height:s,color:"#ffffff",stroke:false,strokeColor:"#000000",strokeWidth:Math.round(s*0.05)||2});setLayers(p=>[...p,l]);setSelectedId(l.id);setShowSvg(false);setSelAnimIdx(0);};
+  const addImg=(e)=>{const f=e.target.files?.[0];if(!f)return;const img=new Image();img.onload=()=>{const a=img.width/img.height,fw=Math.min(canvasW*0.8,img.width),fh=fw/a;const l=mkBase({type:"image",img,x:Math.round((canvasW-fw)/2),y:Math.round((canvasH-fh)/2),width:Math.round(fw),height:Math.round(fh)});setLayers(p=>[...p,l]);setSelectedId(l.id);setSelAnimIdx(0);};img.src=URL.createObjectURL(f);e.target.value="";};
+  const delLayer=id=>{setLayers(p=>p.filter(l=>l.id!==id));if(selectedId===id)setSelectedId(null);};
+  const mvLayer=(id,dir)=>setLayers(p=>{const i=p.findIndex(l=>l.id===id);if(i<0)return p;const n=i+dir;if(n<0||n>=p.length)return p;const a=[...p];[a[i],a[n]]=[a[n],a[i]];return a;});
+  const dupeLayer=id=>{const src=layers.find(l=>l.id===id);if(!src)return;const l={...src,id:uid(),animations:(src.animations||[]).map(a=>({...a,id:uid()}))};setLayers(p=>[...p,l]);setSelectedId(l.id);};
+
+  const onDown=e=>{const r=canvasRef.current.getBoundingClientRect();const sx=canvasW/r.width,sy=canvasH/r.height;const mx=(e.clientX-r.left)*sx,my=(e.clientY-r.top)*sy;for(let i=layers.length-1;i>=0;i--){const l=layers[i];if(!l.visible)continue;let hit;if(l.type==="text"||l.type==="emoji")hit=Math.abs(mx-l.x)<(l.width||l.fontSize*(l.text?.length||1)*0.6)/2&&Math.abs(my-l.y)<(l.height||l.fontSize)/2;else if(l.type==="circle")hit=Math.hypot(mx-(l.x+l.radius),my-(l.y+l.radius))<=l.radius;else hit=mx>=l.x&&mx<=l.x+(l.width||0)&&my>=l.y&&my<=l.y+(l.height||0);if(hit){setSelectedId(l.id);setDrag({id:l.id,sx:mx,sy:my,ox:l.x,oy:l.y});return;}}setSelectedId(null);};
+  const onMove=e=>{if(!drag)return;const r=canvasRef.current.getBoundingClientRect();const mx=(e.clientX-r.left)*canvasW/r.width,my=(e.clientY-r.top)*canvasH/r.height;upLayer(drag.id,{x:Math.round(drag.ox+mx-drag.sx),y:Math.round(drag.oy+my-drag.sy)});};
+  const onUp=()=>setDrag(null);
+
+  const expPNG=()=>{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
+  const expGIF=async()=>{setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
+
+  const expWebP=async()=>{setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
+
+  const cs=Math.min(280/canvasW,280/canvasH);
+  const NI={background:"#1a1a28",border:"1px solid #2a2a3e",borderRadius:4,color:"#ddd",padding:"4px 6px",fontSize:11,width:56,outline:"none"};
+  const AB={padding:"4px 10px",fontSize:11,borderRadius:5,background:"#1e1e2e",color:"#ccc",border:"1px solid #2a2a3e",cursor:"pointer",whiteSpace:"nowrap"};
+  const TB={background:"none",border:"none",color:"#777",cursor:"pointer",fontSize:10,padding:"0 2px"};
+  const EB={padding:"8px 18px",fontSize:12,fontWeight:600,borderRadius:8,background:"linear-gradient(135deg,#1e1e2e,#2a2a3e)",color:"#ddd",border:"1px solid #3a3a4e",cursor:"pointer"};
+
+  const PRESETS_ANIM = [
+    {label:"Fade In→Out",steps:[{type:"fadeIn",d:0.4},{type:"hold",d:0.8},{type:"fadeOut",d:0.4}]},
+    {label:"Slide In→Out",steps:[{type:"slideInLeft",d:0.3},{type:"hold",d:0.6},{type:"slideOutRight",d:0.3}]},
+    {label:"Bounce→Rotate",steps:[{type:"bounceIn",d:0.5},{type:"rotateCW",d:0.8}]},
+    {label:"Scale→Pulse→Fade",steps:[{type:"scaleIn",d:0.3},{type:"pulse",d:0.6},{type:"fadeOut",d:0.3}]},
+    {label:"Type→Hold→Fade",steps:[{type:"typewriter",d:0.6},{type:"hold",d:0.6},{type:"fadeOut",d:0.3}]},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0d0d12",fontFamily:"'Segoe UI',system-ui,sans-serif",color:"#e0e0e8",display:"flex",flexDirection:"column"}}>
+      <div style={{background:"linear-gradient(135deg,#12121a,#1a1a2e)",borderBottom:"1px solid #2a2a3e",padding:"12px 24px",display:"flex",alignItems:"center",gap:16}}>
+        <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#e94560,#c23152)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>SD</div>
+        <div><div style={{fontWeight:700,fontSize:16,letterSpacing:"0.5px"}}>Stream Deck Button Creator <span style={{fontSize:11,fontWeight:400,color:"#666"}}>v{APP_VERSION}</span></div><div style={{fontSize:11,color:"#888",marginTop:1}}>Design animated buttons with chained animations</div></div>
+      </div>
+      <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+        {/* LEFT PANEL */}
+        <div style={{width:260,background:"#111118",borderRight:"1px solid #2a2a3e",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"12px 14px",borderBottom:"1px solid #1e1e2e"}}>
+            <SL>Canvas Size</SL>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+              {PRESETS.map(p=><button key={p.label} onClick={()=>{setCanvasW(p.w);setCanvasH(p.h);}} style={{padding:"3px 8px",fontSize:10,borderRadius:4,background:canvasW===p.w&&canvasH===p.h?"#e94560":"#1e1e2e",color:canvasW===p.w&&canvasH===p.h?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{p.label}</button>)}
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input type="number" value={canvasW} onChange={e=>setCanvasW(Math.max(16,+e.target.value))} style={NI}/><span style={{color:"#555",fontSize:12}}>x</span><input type="number" value={canvasH} onChange={e=>setCanvasH(Math.max(16,+e.target.value))} style={NI}/>
+            </div>
+          </div>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid #1e1e2e"}}>
+            <SL>Background</SL>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+              {!bgTransparent&&<input type="color" value={bgColor} onChange={e=>setBgColor(e.target.value)} style={{width:28,height:28,border:"none",borderRadius:4,cursor:"pointer",background:"none"}}/>}
+              <label style={{fontSize:11,color:"#888",display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={bgTransparent} onChange={e=>setBgTransparent(e.target.checked)}/>Transparent</label>
+              {!bgTransparent&&<label style={{fontSize:11,color:"#888",display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={bgGrad.enabled} onChange={e=>setBgGrad({...bgGrad,enabled:e.target.checked})}/>Gradient</label>}
+            </div>
+            {!bgTransparent&&bgGrad.enabled&&<div style={{display:"flex",gap:6,alignItems:"center"}}><input type="color" value={bgGrad.color1} onChange={e=>setBgGrad({...bgGrad,color1:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/><span style={{color:"#555",fontSize:11}}>to</span><input type="color" value={bgGrad.color2} onChange={e=>setBgGrad({...bgGrad,color2:e.target.value})} style={{width:24,height:24,border:"none",borderRadius:4,cursor:"pointer"}}/></div>}
+          </div>
+          <div style={{padding:"10px 14px",borderBottom:"1px solid #1e1e2e"}}>
+            <SL>Add Layer</SL>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+              {[{l:"T Text",f:addText},{l:"◼ Rect",f:addRect},{l:"● Circle",f:addCircle},{l:"😀 Emoji",f:()=>{setShowEmoji(!showEmoji);setShowSvg(false);}},{l:"✦ Icons",f:()=>{setShowSvg(!showSvg);setShowEmoji(false);}},{l:"📷 Image",f:()=>fileRef.current?.click()}].map(b=><button key={b.l} onClick={b.f} style={AB}>{b.l}</button>)}
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" onChange={addImg} style={{display:"none"}}/>
+            {showEmoji&&<div style={{marginTop:6,display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2,background:"#1a1a28",borderRadius:6,padding:6,maxHeight:120,overflowY:"auto"}}>{EMOJIS.map(em=><button key={em} onClick={()=>addEmoji(em)} style={{fontSize:16,background:"none",border:"none",cursor:"pointer",padding:2,borderRadius:4}} onMouseOver={ev=>ev.target.style.background="#2a2a3e"} onMouseOut={ev=>ev.target.style.background="none"}>{em}</button>)}</div>}
+            {showSvg&&<div style={{marginTop:6,background:"#1a1a28",borderRadius:6,padding:6}}>
+              <div style={{display:"flex",gap:3,flexWrap:"wrap",marginBottom:6}}>
+                {SVG_CATS.map(cat=><button key={cat} onClick={()=>setSvgCat(cat)} style={{padding:"2px 7px",fontSize:9,borderRadius:4,background:svgCat===cat?"#e94560":"#1e1e2e",color:svgCat===cat?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{cat}</button>)}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3,maxHeight:150,overflowY:"auto"}}>
+                {SVG_ICONS.filter(i=>i.cat===svgCat).map(icon=><button key={icon.id} onClick={()=>addSvgShape(icon)} title={icon.label} style={{background:"#1e1e2e",border:"1px solid #2a2a3e",borderRadius:5,cursor:"pointer",padding:4,display:"flex",flexDirection:"column",alignItems:"center",gap:2}} onMouseOver={ev=>ev.currentTarget.style.background="#2a2a3e"} onMouseOut={ev=>ev.currentTarget.style.background="#1e1e2e"}>
+                  <SvgIconPreview icon={icon} size={32}/>
+                  <span style={{fontSize:8,color:"#888",textAlign:"center",lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",width:"100%"}}>{icon.label.replace(/^[^\s]+\s/,"")}</span>
+                </button>)}
+              </div>
+            </div>}
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"6px 0"}}>
+            <div style={{padding:"0 14px 4px",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666"}}>Layers ({layers.length})</div>
+            {!layers.length&&<div style={{padding:"20px 14px",textAlign:"center",color:"#444",fontSize:12}}>No layers yet</div>}
+            {[...layers].reverse().map(l=>(
+              <div key={l.id} onClick={()=>{setSelectedId(l.id);setSelAnimIdx(0);}} style={{padding:"6px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,background:selectedId===l.id?"#1e1e32":"transparent",borderLeft:selectedId===l.id?"2px solid #e94560":"2px solid transparent"}}>
+                <span style={{fontSize:12,width:20,textAlign:"center",flexShrink:0}}>{l.type==="text"?"T":l.type==="rect"?"◼":l.type==="circle"?"●":l.type==="emoji"?l.text:l.type==="svg"?"✦":"📷"}</span>
+                <span style={{fontSize:11,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.type==="text"?l.text:l.type==="emoji"?"Emoji":l.type==="image"?"Image":l.type==="svg"?(SVG_ICONS.find(i=>i.id===l.iconId)?.label.replace(/^[^\s]+\s/,"")||"Icon"):l.type}</span>
+                {(l.animations||[]).length>0&&<span style={{fontSize:9,color:"#e94560",background:"#2a1525",padding:"1px 4px",borderRadius:3}}>{l.animations.length}✦</span>}
+                <button onClick={e=>{e.stopPropagation();upLayer(l.id,{visible:!l.visible});}} style={{background:"none",border:"none",color:l.visible?"#888":"#444",cursor:"pointer",fontSize:11}}>{l.visible?"👁":"👁‍🗨"}</button>
+                <button onClick={e=>{e.stopPropagation();delLayer(l.id);}} style={{background:"none",border:"none",color:"#e94560",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* CENTER */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,padding:24}}>
+          <div style={{background:"#18181f",borderRadius:12,padding:24,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",border:"1px solid #2a2a3e"}}>
+            <div style={{position:"relative",width:canvasW*cs,height:canvasH*cs,borderRadius:4,overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.5)",background:bgTransparent?"repeating-conic-gradient(#3a3a46 0% 25%, #23232d 0% 50%) 0 0 / 16px 16px":"none"}}>
+              <canvas ref={canvasRef} style={{width:canvasW*cs,height:canvasH*cs,display:"block",cursor:drag?"grabbing":"grab"}} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}/>
+            </div>
+            <div style={{textAlign:"center",marginTop:8,fontSize:11,color:"#555"}}>{canvasW} x {canvasH}px</div>
+          </div>
+          <div style={{background:"#111118",borderRadius:10,padding:"12px 20px",width:"100%",maxWidth:480,border:"1px solid #2a2a3e"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <button onClick={()=>{setPlaying(!playing);if(!playing)setCurTime(0);}} style={{width:32,height:32,borderRadius:"50%",background:playing?"#e94560":"#2a2a3e",border:"none",color:"#fff",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{playing?"⏸":"▶"}</button>
+              <button onClick={()=>{setPlaying(false);setCurTime(0);}} style={{background:"#1e1e2e",border:"1px solid #2a2a3e",borderRadius:6,padding:"4px 10px",color:"#aaa",cursor:"pointer",fontSize:11}}>⏹ Reset</button>
+              <span style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{curTime.toFixed(1)}s / {totalDur}s</span>
+              <div style={{flex:1}}/>
+              <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>Dur <input type="number" value={totalDur} min={0.5} max={30} step={0.5} onChange={e=>setTotalDur(+e.target.value)} style={{...NI,width:48}}/>s</label>
+            </div>
+            <div style={{height:6,background:"#1e1e2e",borderRadius:3,position:"relative",cursor:"pointer",marginBottom:8}} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setCurTime(((e.clientX-r.left)/r.width)*totalDur);}}>
+              <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${(curTime/totalDur)*100}%`,background:"linear-gradient(90deg,#e94560,#c23152)",borderRadius:3,transition:playing?"none":"width 0.1s"}}/>
+            </div>
+            {sel&&selAnims.length>0&&(
+              <div style={{marginTop:4}}>
+                <div style={{fontSize:9,color:"#555",marginBottom:3}}>Animation chain for "{sel.type==="text"?sel.text:sel.type}"</div>
+                <div style={{display:"flex",height:22,background:"#1a1a28",borderRadius:4,overflow:"hidden",position:"relative"}}>
+                  {(()=>{const sd=sel.animStartDelay||0;const tl=getTimeline(selAnims);const dp=(sd/totalDur)*100;return(<React.Fragment>{sd>0&&<div style={{width:`${dp}%`,background:"#1e1e2e",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,color:"#555"}}>delay</span></div>}{tl.map((s,i)=>{const pct=(s.duration/totalDur)*100;return(<div key={s.id} onClick={ev=>{ev.stopPropagation();setSelAnimIdx(i);}} style={{width:`${pct}%`,minWidth:2,background:selAnimIdx===i?(AC[s.type]||"#666"):(AC[s.type]||"#666")+"88",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",borderRight:"1px solid #0d0d12"}}><span style={{fontSize:7,color:"#000",fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",padding:"0 2px"}}>{ANIM_TYPES.find(a=>a.id===s.type)?.label||s.type}</span></div>);})}</React.Fragment>);})()}
+                  <div style={{position:"absolute",left:`${(curTime/totalDur)*100}%`,top:0,width:1,height:"100%",background:"#fff",opacity:0.6,pointerEvents:"none"}}/>
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <button onClick={expPNG} style={EB}>📷 Export PNG</button>
+            <button onClick={expGIF} disabled={exporting} style={{...EB,background:exporting?"#333":"linear-gradient(135deg,#e94560,#c23152)",cursor:exporting?"wait":"pointer"}}>{exporting?"⏳ Encoding...":"🎬 Export GIF"}</button>
+            <button onClick={expWebP} disabled={exportingWebP} style={{...EB,background:exportingWebP?"#333":"linear-gradient(135deg,#3a7bd5,#2a5b9d)",cursor:exportingWebP?"wait":"pointer"}}>{exportingWebP?"⏳ Encoding...":"🎞 Export WebP"}</button>
+            <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>FPS<input type="number" value={fps} min={5} max={30} onChange={e=>setFps(Math.max(5,Math.min(30,+e.target.value)))} style={{...NI,width:40}}/></label>
+          </div>
+        </div>
+
+        {/* RIGHT PANEL */}
+        <div style={{width:290,background:"#111118",borderLeft:"1px solid #2a2a3e",overflowY:"auto",padding:"12px 14px"}}>
+          {!sel?<div style={{textAlign:"center",color:"#444",marginTop:40,fontSize:12}}>Select a layer to edit</div>:(
+            <React.Fragment>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:"#666",marginBottom:10}}>{sel.type.toUpperCase()} Properties</div>
+              <PS t="Position">{(()=>{
+                // helpers: does this layer type use x,y as top-left or draw-centre?
+                const isCentered = sel.type==="text"||sel.type==="emoji";
+                const lw = isCentered ? (sel.width||sel.fontSize||0) : (sel.width||0);
+                const lh = isCentered ? (sel.height||sel.fontSize||0) : (sel.height||0);
+                const centerX = ()=> upLayer(sel.id,{x: isCentered ? Math.round(canvasW/2) : Math.round((canvasW-lw)/2)});
+                const centerY = ()=> upLayer(sel.id,{y: isCentered ? Math.round(canvasH/2) : Math.round((canvasH-lh)/2)});
+                const mirrorX = ()=> upLayer(sel.id,{
+                  x: isCentered ? canvasW - sel.x : canvasW - sel.x - lw,
+                  rotation: -(sel.rotation||0)
+                });
+                const mirrorY = ()=> upLayer(sel.id,{
+                  y: isCentered ? canvasH - sel.y : canvasH - sel.y - lh,
+                  rotation: -(sel.rotation||0)
+                });
+                const btnStyle = {...AB, fontSize:10, padding:"2px 7px"};
+                return (<React.Fragment>
+                <PR l="X"><input type="number" value={sel.x} onChange={e=>upLayer(sel.id,{x:+e.target.value})} style={NI}/></PR>
+                <PR l="Y"><input type="number" value={sel.y} onChange={e=>upLayer(sel.id,{y:+e.target.value})} style={NI}/></PR>
+                {(sel.type==="rect"||sel.type==="image"||sel.type==="svg")&&<React.Fragment><PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR><PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR></React.Fragment>}
+                {sel.type==="circle"&&<PR l="Radius"><input type="number" value={sel.radius} onChange={e=>upLayer(sel.id,{radius:+e.target.value,width:+e.target.value*2,height:+e.target.value*2})} style={NI}/></PR>}
+                <PR l="Centre">
+                  <button onClick={centerX} style={btnStyle} title="Centre horizontally">↔ H</button>
+                  <button onClick={centerY} style={btnStyle} title="Centre vertically">↕ V</button>
+                  <button onClick={()=>{centerX();centerY();}} style={{...btnStyle,background:"#1a2a3a",borderColor:"#2a4a5a",color:"#7dd"}} title="Centre on canvas">⊕ Both</button>
+                </PR>
+                <PR l="Mirror">
+                  <button onClick={mirrorX} style={btnStyle} title="Mirror left ↔ right, flip rotation">⇄ X</button>
+                  <button onClick={mirrorY} style={btnStyle} title="Mirror top ↕ bottom, flip rotation">⇅ Y</button>
+                </PR>
+                <PR l="Rotation">
+                  <input type="range" min={-180} max={180} value={sel.rotation||0} onChange={e=>upLayer(sel.id,{rotation:+e.target.value})} style={{flex:1}}/>
+                  <input type="number" value={sel.rotation||0} min={-180} max={180} onChange={e=>upLayer(sel.id,{rotation:+e.target.value})} style={{...NI,width:44}}/>
+                  <span style={{fontSize:9,color:"#555"}}>°</span>
+                  {(sel.rotation||0)!==0&&<button onClick={()=>upLayer(sel.id,{rotation:0})} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:9,padding:"0 2px"}} title="Reset rotation">↺</button>}
+                </PR>
+                <PR l="Opacity">
+                  <input type="range" min={0} max={1} step={0.01} value={sel.opacity??1} onChange={e=>upLayer(sel.id,{opacity:+e.target.value})} style={{flex:1}}/>
+                  <span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{Math.round((sel.opacity??1)*100)}%</span>
+                </PR>
+                </React.Fragment>);
+              })()}</PS>
+
+              {sel.type==="text"&&<PS t="Text">
+                <textarea value={sel.text} onChange={e=>upLayer(sel.id,{text:e.target.value})} rows={2} style={{...NI,width:"100%",resize:"vertical",fontFamily:"inherit"}}/>
+                <PR l="Font"><select value={sel.fontFamily} onChange={e=>upLayer(sel.id,{fontFamily:e.target.value})} style={{...NI,width:"100%"}}>{FONTS.map(f=><option key={f} value={f}>{f}</option>)}</select></PR>
+                <PR l="Size"><input type="range" min={6} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
+                <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
+                <PR l="Style">
+                  <label style={{fontSize:11,color:"#aaa",display:"flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={sel.bold} onChange={e=>upLayer(sel.id,{bold:e.target.checked})}/><b>B</b></label>
+                  <label style={{fontSize:11,color:"#aaa",display:"flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={sel.italic} onChange={e=>upLayer(sel.id,{italic:e.target.checked})}/><i>I</i></label>
+                  <label style={{fontSize:11,color:"#aaa",display:"flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={sel.shadow} onChange={e=>upLayer(sel.id,{shadow:e.target.checked})}/>S</label>
+                </PR>
+                <PR l="Align">{["left","center","right"].map(a=><button key={a} onClick={()=>upLayer(sel.id,{align:a})} style={{...AB,padding:"2px 8px",background:sel.align===a?"#e94560":"#1e1e2e",color:sel.align===a?"#fff":"#aaa"}}>{a==="left"?"◀":a==="center"?"●":"▶"}</button>)}</PR>
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+              </PS>}
+
+              {sel.type==="emoji"&&<PS t="Emoji">
+                <PR l="Size"><input type="range" min={8} max={Math.max(100,canvasW)} value={sel.fontSize} onChange={e=>upLayer(sel.id,{fontSize:+e.target.value,width:+e.target.value,height:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.fontSize}</span></PR>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:2,marginTop:6}}>{EMOJIS.map(em=><button key={em} onClick={()=>upLayer(sel.id,{text:em})} style={{fontSize:14,background:sel.text===em?"#2a2a3e":"none",border:"none",cursor:"pointer",padding:2,borderRadius:4}}>{em}</button>)}</div>
+              </PS>}
+
+              {sel.type==="svg"&&<PS t="SVG Icon">
+                <PR l="Icon">
+                  <div style={{display:"flex",flexDirection:"column",gap:4,width:"100%"}}>
+                    <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                      {SVG_CATS.map(cat=><button key={cat} onClick={()=>setSvgCat(cat)} style={{padding:"2px 6px",fontSize:9,borderRadius:4,background:svgCat===cat?"#e94560":"#1e1e2e",color:svgCat===cat?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{cat}</button>)}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:2,maxHeight:120,overflowY:"auto",background:"#1a1a28",borderRadius:4,padding:4}}>
+                      {SVG_ICONS.filter(i=>i.cat===svgCat).map(icon=><button key={icon.id} onClick={()=>upLayer(sel.id,{iconId:icon.id})} title={icon.label} style={{background:sel.iconId===icon.id?"#2a2a4e":"#1e1e2e",border:sel.iconId===icon.id?"1px solid #e94560":"1px solid #2a2a3e",borderRadius:4,cursor:"pointer",padding:3,display:"flex",alignItems:"center",justifyContent:"center"}} onMouseOver={ev=>ev.currentTarget.style.background=sel.iconId===icon.id?"#2a2a4e":"#252535"} onMouseOut={ev=>ev.currentTarget.style.background=sel.iconId===icon.id?"#2a2a4e":"#1e1e2e"}>
+                        <SvgIconPreview icon={icon} size={24}/>
+                      </button>)}
+                    </div>
+                  </div>
+                </PR>
+                <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
+                <PR l="W"><input type="number" value={sel.width} onChange={e=>upLayer(sel.id,{width:+e.target.value})} style={NI}/></PR>
+                <PR l="H"><input type="number" value={sel.height} onChange={e=>upLayer(sel.id,{height:+e.target.value})} style={NI}/></PR>
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={20} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+              </PS>}
+
+              {(sel.type==="rect"||sel.type==="circle")&&<PS t="Appearance">
+                <PR l="Fill"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
+                {sel.type==="rect"&&<PR l="Radius"><input type="range" min={0} max={Math.round(Math.min(sel.width,sel.height)/2)} value={sel.radius||0} onChange={e=>upLayer(sel.id,{radius:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:20,textAlign:"right"}}>{sel.radius||0}</span></PR>}
+                <PR l="Stroke"><input type="checkbox" checked={sel.stroke} onChange={e=>upLayer(sel.id,{stroke:e.target.checked})}/>{sel.stroke&&<React.Fragment><input type="color" value={sel.strokeColor} onChange={e=>upLayer(sel.id,{strokeColor:e.target.value})} style={{width:22,height:20,border:"none",borderRadius:3,cursor:"pointer"}}/><input type="number" value={sel.strokeWidth} min={1} max={10} onChange={e=>upLayer(sel.id,{strokeWidth:+e.target.value})} style={{...NI,width:36}}/></React.Fragment>}</PR>
+              </PS>}
+
+              {/* ANIMATION CHAIN */}
+              <PS t="Animation Chain">
+                <PR l="Start at"><input type="range" min={0} max={totalDur} step={0.05} value={sel.animStartDelay||0} onChange={e=>upLayer(sel.id,{animStartDelay:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:30,textAlign:"right"}}>{(sel.animStartDelay||0).toFixed(1)}s</span></PR>
+                <div style={{display:"flex",flexDirection:"column",gap:3,marginTop:6}}>
+                  {!selAnims.length&&<div style={{fontSize:11,color:"#555",textAlign:"center",padding:8}}>No animations. Add one below.</div>}
+                  {selAnims.map((a,i)=>(
+                    <div key={a.id} onClick={()=>setSelAnimIdx(i)} style={{display:"flex",alignItems:"center",gap:4,padding:"4px 6px",borderRadius:5,cursor:"pointer",background:selAnimIdx===i?"#1e1e32":"#161620",border:selAnimIdx===i?`1px solid ${AC[a.type]||"#444"}`:"1px solid #1e1e2e"}}>
+                      <span style={{fontSize:9,fontWeight:700,color:"#fff",width:14,textAlign:"center",flexShrink:0,background:AC[a.type]||"#666",borderRadius:3,padding:"1px 0"}}>{i+1}</span>
+                      <span style={{fontSize:10,flex:1,color:"#ccc",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{ANIM_TYPES.find(x=>x.id===a.type)?.label||a.type}</span>
+                      <span style={{fontSize:9,color:"#666"}}>{a.duration.toFixed(1)}s</span>
+                      <button onClick={e=>{e.stopPropagation();mvAnim(sel.id,i,-1);}} style={TB} disabled={i===0}>↑</button>
+                      <button onClick={e=>{e.stopPropagation();mvAnim(sel.id,i,1);}} style={TB} disabled={i===selAnims.length-1}>↓</button>
+                      <button onClick={e=>{e.stopPropagation();rmAnim(sel.id,i);}} style={{...TB,color:"#e94560"}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{marginTop:6,display:"flex",gap:4}}>
+                  <select id="addAnimSel" style={{...NI,flex:1}}>{ANIM_TYPES.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select>
+                  <button onClick={()=>{addAnim(sel.id,document.getElementById("addAnimSel").value);}} style={{...AB,background:"#1a3a2a",color:"#4ade80",borderColor:"#2a5a3a"}}>+ Add</button>
+                </div>
+                <div style={{marginTop:6}}><div style={{fontSize:9,color:"#555",marginBottom:3}}>Quick presets:</div>
+                  <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                    {PRESETS_ANIM.map(p=><button key={p.label} onClick={()=>{upLayer(sel.id,{animations:p.steps.map(s=>({...makeAnimStep(s.type),duration:s.d}))});setSelAnimIdx(0);}} style={{...AB,fontSize:9,padding:"2px 6px"}}>{p.label}</button>)}
+                  </div>
+                </div>
+              </PS>
+
+              {selAnim&&<PS t={`Step ${selAnimIdx+1}: ${ANIM_TYPES.find(a=>a.id===selAnim.type)?.label||selAnim.type}`}>
+                <PR l="Type"><select value={selAnim.type} onChange={e=>{const newType=e.target.value;upAnim(sel.id,selAnimIdx,{type:newType,...(ANIM_PARAM_DEFAULTS[newType]||{})});}} style={{...NI,width:"100%"}}>{ANIM_TYPES.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></PR>
+                <PR l="Duration"><input type="range" min={0.05} max={5} step={0.05} value={selAnim.duration} onChange={e=>upAnim(sel.id,selAnimIdx,{duration:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{selAnim.duration.toFixed(2)}s</span></PR>
+                <PR l="Easing"><select value={selAnim.easing||"easeOut"} onChange={e=>upAnim(sel.id,selAnimIdx,{easing:e.target.value})} style={{...NI,width:"100%"}}>{EASING_OPTIONS.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></PR>
+                {/* Move params */}
+                {(selAnim.type==="move"||selAnim.type==="moveScale")&&<React.Fragment>
+                  <PR l="Move X"><input type="range" min={-300} max={300} value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
+                  <PR l="Move Y"><input type="range" min={-300} max={300} value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveY||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveY:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
+                </React.Fragment>}
+                {/* Scale params */}
+                {(selAnim.type==="animScale"||selAnim.type==="moveScale"||selAnim.type==="rotateScale")&&<React.Fragment>
+                  <PR l="Scale From"><input type="range" min={0} max={4} step={0.05} value={selAnim.scaleFrom??1} onChange={e=>upAnim(sel.id,selAnimIdx,{scaleFrom:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{(selAnim.scaleFrom??1).toFixed(2)}×</span></PR>
+                  <PR l="Scale To"><input type="range" min={0} max={4} step={0.05} value={selAnim.scaleTo??1.5} onChange={e=>upAnim(sel.id,selAnimIdx,{scaleTo:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{(selAnim.scaleTo??1.5).toFixed(2)}×</span></PR>
+                </React.Fragment>}
+                {/* Rotate params */}
+                {(selAnim.type==="animRotate"||selAnim.type==="rotateScale")&&<React.Fragment>
+                  <PR l="Rot From"><input type="range" min={-720} max={720} value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotFrom??0} onChange={e=>upAnim(sel.id,selAnimIdx,{rotFrom:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
+                  <PR l="Rot To"><input type="range" min={-720} max={720} value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.rotTo??360} onChange={e=>upAnim(sel.id,selAnimIdx,{rotTo:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>
+                </React.Fragment>}
+              </PS>}
+
+              <PS t="Layer Actions">
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  <button onClick={()=>mvLayer(sel.id,-1)} style={AB}>↓ Back</button>
+                  <button onClick={()=>mvLayer(sel.id,1)} style={AB}>↑ Front</button>
+                  <button onClick={()=>dupeLayer(sel.id)} style={AB}>⧉ Dupe</button>
+                  <button onClick={()=>delLayer(sel.id)} style={{...AB,background:"#3a1020",color:"#e94560",borderColor:"#5a1530"}}>✕ Delete</button>
+                </div>
+              </PS>
+            </React.Fragment>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
