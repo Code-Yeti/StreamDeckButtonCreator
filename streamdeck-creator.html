@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v3.0.1</title>
+<title>Stream Deck Button Creator v4.0.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "3.0.1";
+const APP_VERSION = "4.0.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -35,6 +35,8 @@ const PRESETS = [
   { label: "SD + / MK.2", w: 144, h: 144 },
   { label: "SD Neo", w: 128, h: 128 },
 ];
+// Generic square sizes: common icon sizes plus 150 and 200
+const GENERIC_SIZES = [64, 128, 150, 200, 256, 512];
 
 const ANIM_TYPES = [
   { id: "fadeIn", label: "Fade In" },
@@ -396,7 +398,7 @@ function App() {
   const [svgCat,setSvgCat]=useState("Arrows");
   const [fps,setFps]=useState(30);
   const [selAnimIdx,setSelAnimIdx]=useState(0);
-  const canvasRef=useRef(null),animRef=useRef(null),startRef=useRef(null),fileRef=useRef(null);
+  const canvasRef=useRef(null),animRef=useRef(null),startRef=useRef(null),fileRef=useRef(null),projRef=useRef(null);
   const [drag,setDrag]=useState(null);
 
   const sel = layers.find(l=>l.id===selectedId);
@@ -432,6 +434,86 @@ function App() {
 
   const expWebP=async()=>{setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
 
+  /* ── Project save / load ──
+     Everything is serialised to JSON. Image layers hold a live HTMLImageElement (l.img),
+     which can't be serialised, so on save it is re-encoded to a PNG data URL at its
+     original resolution (imgSrc) and rebuilt into an Image on load. */
+  const saveProject=()=>{
+    const serial=layers.map(l=>{
+      const {img,...rest}=l;
+      if(l.type==="image"&&img){
+        try{
+          const c=document.createElement("canvas");
+          c.width=img.naturalWidth||l.width||1;c.height=img.naturalHeight||l.height||1;
+          c.getContext("2d").drawImage(img,0,0);
+          return {...rest,imgSrc:c.toDataURL("image/png")};
+        }catch(err){console.error("Could not embed image layer",err);return rest;}
+      }
+      return rest;
+    });
+    const proj={
+      app:"StreamDeckButtonCreator",appVersion:APP_VERSION,format:1,savedAt:new Date().toISOString(),
+      canvas:{w:canvasW,h:canvasH},
+      background:{color:bgColor,transparent:bgTransparent,gradient:bgGrad},
+      timeline:{totalDur,fps},
+      layers:serial,
+    };
+    const u=URL.createObjectURL(new Blob([JSON.stringify(proj)],{type:"application/json"}));
+    const d=new Date(),p2=n=>String(n).padStart(2,"0");
+    const stamp=`${p2(d.getDate())}${p2(d.getMonth()+1)}${d.getFullYear()}${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+    const a=document.createElement("a");a.href=u;a.download=`SDBC_${stamp}.sdproj`;a.click();URL.revokeObjectURL(u);
+  };
+
+  const resetProject=()=>{
+    if(layers.length&&!window.confirm("Reset the project? All layers and settings will be cleared."))return;
+    setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
+    setLayers([]);setCanvasW(144);setCanvasH(144);
+    setBgColor("#1a1a2e");setBgTransparent(false);setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90});
+    setTotalDur(2);setFps(30);setShowEmoji(false);setShowSvg(false);
+  };
+
+  const loadProject=e=>{
+    const f=e.target.files?.[0];e.target.value="";if(!f)return;
+    const reader=new FileReader();
+    reader.onload=async()=>{
+      try{
+        const proj=JSON.parse(reader.result);
+        if(proj.app!=="StreamDeckButtonCreator"||!Array.isArray(proj.layers))throw new Error("not a Stream Deck Button Creator project file");
+        const restored=await Promise.all(proj.layers.map(raw=>{
+          // merge over mkBase-style defaults so files from older versions stay loadable
+          const {img,imgSrc,...rest}=raw;
+          const base={id:uid(),visible:true,animations:[],animStartDelay:0,rotation:0,opacity:1,...rest};
+          if(raw.type==="image"&&imgSrc){
+            return new Promise((res,rej)=>{
+              const im=new Image();
+              im.onload=()=>res({...base,img:im});
+              im.onerror=()=>rej(new Error("an embedded image could not be restored"));
+              im.src=imgSrc;
+            });
+          }
+          return Promise.resolve(base);
+        }));
+        setPlaying(false);setCurTime(0);setSelectedId(null);setSelAnimIdx(0);setDrag(null);
+        if(proj.canvas){setCanvasW(Math.max(16,+proj.canvas.w||144));setCanvasH(Math.max(16,+proj.canvas.h||144));}
+        if(proj.background){
+          setBgColor(proj.background.color||"#1a1a2e");
+          setBgTransparent(!!proj.background.transparent);
+          setBgGrad({enabled:false,color1:"#1a1a2e",color2:"#16213e",angle:90,...(proj.background.gradient||{})});
+        }
+        if(proj.timeline){setTotalDur(+proj.timeline.totalDur||2);setFps(Math.max(5,Math.min(60,+proj.timeline.fps||30)));}
+        setLayers(restored);
+      }catch(err){alert("Could not load project: "+(err.message||err));}
+    };
+    reader.onerror=()=>alert("Could not read the selected file");
+    reader.readAsText(f);
+  };
+
+  // Fit the timeline to the longest animation chain (start delay + step durations)
+  const fitDuration=()=>{
+    const m=layers.reduce((mx,l)=>Math.max(mx,(l.animStartDelay||0)+getTotalDur(l.animations)),0);
+    if(m>0){setTotalDur(Math.max(0.5,Math.round(m*100)/100));setCurTime(0);}
+  };
+
   const cs=Math.min(280/canvasW,280/canvasH);
   const NI={background:"#1a1a28",border:"1px solid #2a2a3e",borderRadius:4,color:"#ddd",padding:"4px 6px",fontSize:11,width:56,outline:"none"};
   const AB={padding:"4px 10px",fontSize:11,borderRadius:5,background:"#1e1e2e",color:"#ccc",border:"1px solid #2a2a3e",cursor:"pointer",whiteSpace:"nowrap"};
@@ -451,14 +533,22 @@ function App() {
       <div style={{background:"linear-gradient(135deg,#12121a,#1a1a2e)",borderBottom:"1px solid #2a2a3e",padding:"12px 24px",display:"flex",alignItems:"center",gap:16}}>
         <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#e94560,#c23152)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900}}>SD</div>
         <div><div style={{fontWeight:700,fontSize:16,letterSpacing:"0.5px"}}>Stream Deck Button Creator <span style={{fontSize:11,fontWeight:400,color:"#666"}}>v{APP_VERSION}</span></div><div style={{fontSize:11,color:"#888",marginTop:1}}>Design animated buttons with chained animations</div></div>
+        <div style={{flex:1}}/>
+        <button onClick={saveProject} style={{...AB,padding:"6px 14px"}}>💾 Save Project</button>
+        <button onClick={()=>projRef.current?.click()} style={{...AB,padding:"6px 14px"}}>📂 Open Project</button>
+        <button onClick={resetProject} style={{...AB,padding:"6px 14px",background:"#3a1020",color:"#e94560",borderColor:"#5a1530"}}>🗑 Reset</button>
+        <input ref={projRef} type="file" accept=".sdproj,.json,application/json" onChange={loadProject} style={{display:"none"}}/>
       </div>
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
         {/* LEFT PANEL */}
         <div style={{width:260,background:"#111118",borderRight:"1px solid #2a2a3e",display:"flex",flexDirection:"column",overflow:"hidden"}}>
           <div style={{padding:"12px 14px",borderBottom:"1px solid #1e1e2e"}}>
             <SL>Canvas Size</SL>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
               {PRESETS.map(p=><button key={p.label} onClick={()=>{setCanvasW(p.w);setCanvasH(p.h);}} style={{padding:"3px 8px",fontSize:10,borderRadius:4,background:canvasW===p.w&&canvasH===p.h?"#e94560":"#1e1e2e",color:canvasW===p.w&&canvasH===p.h?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{p.label}</button>)}
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+              {GENERIC_SIZES.map(s=><button key={s} onClick={()=>{setCanvasW(s);setCanvasH(s);}} title={`${s} x ${s}px`} style={{padding:"3px 8px",fontSize:10,borderRadius:4,background:canvasW===s&&canvasH===s?"#e94560":"#1e1e2e",color:canvasW===s&&canvasH===s?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{s}²</button>)}
             </div>
             <div style={{display:"flex",gap:6,alignItems:"center"}}>
               <input type="number" value={canvasW} onChange={e=>setCanvasW(Math.max(16,+e.target.value))} style={NI}/><span style={{color:"#555",fontSize:12}}>x</span><input type="number" value={canvasH} onChange={e=>setCanvasH(Math.max(16,+e.target.value))} style={NI}/>
@@ -522,6 +612,7 @@ function App() {
               <span style={{fontSize:10,color:"#888",fontFamily:"monospace"}}>{curTime.toFixed(1)}s / {totalDur}s</span>
               <div style={{flex:1}}/>
               <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>Dur <input type="number" value={totalDur} min={0.5} max={30} step={0.5} onChange={e=>setTotalDur(+e.target.value)} style={{...NI,width:48}}/>s</label>
+              <button onClick={fitDuration} title="Set duration to match the longest animation chain" style={{background:"#1e1e2e",border:"1px solid #2a2a3e",borderRadius:6,padding:"4px 10px",color:"#aaa",cursor:"pointer",fontSize:11}}>⇥ Fit</button>
             </div>
             <div style={{height:6,background:"#1e1e2e",borderRadius:3,position:"relative",cursor:"pointer",marginBottom:8}} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setCurTime(((e.clientX-r.left)/r.width)*totalDur);}}>
               <div style={{position:"absolute",left:0,top:0,height:"100%",width:`${(curTime/totalDur)*100}%`,background:"linear-gradient(90deg,#e94560,#c23152)",borderRadius:3,transition:playing?"none":"width 0.1s"}}/>
@@ -540,7 +631,10 @@ function App() {
             <button onClick={expPNG} style={EB}>📷 Export PNG</button>
             <button onClick={expGIF} disabled={exporting} style={{...EB,background:exporting?"#333":"linear-gradient(135deg,#e94560,#c23152)",cursor:exporting?"wait":"pointer"}}>{exporting?"⏳ Encoding...":"🎬 Export GIF"}</button>
             <button onClick={expWebP} disabled={exportingWebP} style={{...EB,background:exportingWebP?"#333":"linear-gradient(135deg,#3a7bd5,#2a5b9d)",cursor:exportingWebP?"wait":"pointer"}}>{exportingWebP?"⏳ Encoding...":"🎞 Export WebP"}</button>
-            <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>FPS<input type="number" value={fps} min={5} max={30} onChange={e=>setFps(Math.max(5,Math.min(30,+e.target.value)))} style={{...NI,width:40}}/></label>
+            <label style={{fontSize:10,color:"#666",display:"flex",alignItems:"center",gap:4}}>FPS
+              {[15,30,60].map(v=><button key={v} onClick={()=>setFps(v)} style={{padding:"3px 8px",fontSize:10,borderRadius:4,background:fps===v?"#e94560":"#1e1e2e",color:fps===v?"#fff":"#aaa",border:"1px solid #2a2a3e",cursor:"pointer"}}>{v}</button>)}
+              <input type="number" value={fps} min={5} max={60} onChange={e=>setFps(Math.max(5,Math.min(60,+e.target.value)))} style={{...NI,width:40}}/>
+            </label>
           </div>
         </div>
 
