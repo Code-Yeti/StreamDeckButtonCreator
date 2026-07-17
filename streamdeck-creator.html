@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stream Deck Button Creator v4.1.0</title>
+<title>Stream Deck Button Creator v4.2.0</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { overflow: hidden; }
@@ -27,7 +27,7 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-const APP_VERSION = "4.1.0";
+const APP_VERSION = "4.2.0";
 
 const PRESETS = [
   { label: "SD Standard", w: 72, h: 72 },
@@ -57,6 +57,7 @@ const ANIM_TYPES = [
   { id: "rotateCCW", label: "Rotate CCW" },
   { id: "pulse", label: "Pulse" },
   { id: "shake", label: "Shake" },
+  { id: "wiggle", label: "Wiggle" },
   { id: "typewriter", label: "Typewriter" },
   { id: "hold", label: "Hold (pause)" },
   { id: "move", label: "Move" },
@@ -67,10 +68,11 @@ const ANIM_TYPES = [
 ];
 
 // Which animation types have extra configurable params
-const ANIM_PARAM_TYPES = new Set(["move","animScale","animRotate","moveScale","rotateScale"]);
+const ANIM_PARAM_TYPES = new Set(["move","animScale","animRotate","moveScale","rotateScale","wiggle"]);
 // Default extra params per type
 const ANIM_PARAM_DEFAULTS = {
   move:        { moveX: 0, moveY: -20 },
+  wiggle:      { wiggleAmount: 15 },
   animScale:   { scaleFrom: 1, scaleTo: 1.5 },
   animRotate:  { rotFrom: 0, rotTo: 360 },
   moveScale:   { moveX: 0, moveY: -20, scaleFrom: 1, scaleTo: 1.5 },
@@ -99,7 +101,11 @@ const EASING_OPTIONS = [
 ];
 
 const FONTS = ["Arial","Arial Black","Verdana","Tahoma","Trebuchet MS","Impact","Georgia","Times New Roman","Courier New","Comic Sans MS","Lucida Console","Palatino"];
-const EMOJIS = ["🎮","🎯","🔊","🔇","🎵","🎤","📷","💡","⚙️","🔧","▶️","⏸️","⏹️","⏭️","⏮️","🔴","🟢","🔵","⬆️","⬇️","⬅️","➡️","✅","❌","⭐","🔥","💀","👁️","🎬","📁","💾","📋","🖥️","🌙","☀️","🔔","🔕","📌","🏠","💬"];
+const EMOJIS = ["🎮","🎯","🔊","🔇","🎵","🎤","📷","💡","⚙️","🔧","▶️","⏸️","⏹️","⏭️","⏮️","🔴","🟢","🔵","⬆️","⬇️","⬅️","➡️","✅","❌","⭐","🔥","💀","👁️","🎬","📁","💾","📋","🖥️","🌙","☀️","🔔","🔕","📌","🏠","💬",
+  // smilies
+  "😀","😁","😂","🤣","😄","😅","😆","😉","😊","😋","😎","😍","😘","🥰","🙂","🙃","🤗","🤩","🤔","😐","🙄","😏","😮","😴","😌","😛","😜","😝","🤤","😒","😔","🤑","😲","😖","😤","😢","😭","😨","😱","🤯","🥵","🥶","😳","🤪","😵","😡","🤬","😷","🤒","🤢","🤮","🥳","🥺","🤠","🤡","🤫","🤭","🧐","🤓","😈","👻","👽","🤖",
+  // cat smilies
+  "😺","😸","😹","😻","😼","😽","🙀","😿","😾"];
 /* SVG Icon shape paths — all defined in a 100x100 viewBox, drawn with canvas transforms */
 const SVG_ICONS = [
   { id:"arrow-right",    label:"→ Arrow Right",     cat:"Arrows",   draw:(ctx,x,y,w,h)=>{ const s=Math.min(w,h),cx=x+w/2,cy=y+h/2,sw=s*0.18,hw=s*0.5,hh=s*0.3; ctx.beginPath();ctx.moveTo(cx-hw/2,cy-sw/2);ctx.lineTo(cx+hw/2-hh*0.55,cy-sw/2);ctx.lineTo(cx+hw/2-hh*0.55,cy-hh/2);ctx.lineTo(cx+hw/2,cy);ctx.lineTo(cx+hw/2-hh*0.55,cy+hh/2);ctx.lineTo(cx+hw/2-hh*0.55,cy+sw/2);ctx.lineTo(cx-hw/2,cy+sw/2);ctx.closePath(); } },
@@ -154,7 +160,7 @@ const SVG_ICONS = [
 ];
 const SVG_CATS = [...new Set(SVG_ICONS.map(i=>i.cat))];
 
-const AC = {fadeIn:"#4ade80",fadeOut:"#f87171",slideInLeft:"#60a5fa",slideInRight:"#60a5fa",slideOutLeft:"#fb923c",slideOutRight:"#fb923c",slideInTop:"#60a5fa",slideInBottom:"#60a5fa",slideOutTop:"#fb923c",slideOutBottom:"#fb923c",scaleIn:"#a78bfa",scaleOut:"#f472b6",bounceIn:"#facc15",rotateIn:"#2dd4bf",rotateCW:"#2dd4bf",rotateCCW:"#2dd4bf",pulse:"#e879f9",shake:"#fb923c",typewriter:"#34d399",hold:"#6b7280",move:"#38bdf8",animScale:"#a78bfa",animRotate:"#f0abfc",moveScale:"#818cf8",rotateScale:"#c084fc"};
+const AC = {fadeIn:"#4ade80",fadeOut:"#f87171",slideInLeft:"#60a5fa",slideInRight:"#60a5fa",slideOutLeft:"#fb923c",slideOutRight:"#fb923c",slideInTop:"#60a5fa",slideInBottom:"#60a5fa",slideOutTop:"#fb923c",slideOutBottom:"#fb923c",scaleIn:"#a78bfa",scaleOut:"#f472b6",bounceIn:"#facc15",rotateIn:"#2dd4bf",rotateCW:"#2dd4bf",rotateCCW:"#2dd4bf",pulse:"#e879f9",shake:"#fb923c",wiggle:"#f59e0b",typewriter:"#34d399",hold:"#6b7280",move:"#38bdf8",animScale:"#a78bfa",animRotate:"#f0abfc",moveScale:"#818cf8",rotateScale:"#c084fc"};
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const makeAnimStep = (type="fadeIn") => ({ id:uid(), type, duration:0.4, easing:"easeOut", ...(ANIM_PARAM_DEFAULTS[type]||{}) });
@@ -194,6 +200,12 @@ function applySingle(ctx, type, progress, easing, layer, cw, ch, step) {
     case "rotateCCW": ctx.translate(cx,cy); ctx.rotate(-p*Math.PI*2); ctx.translate(-cx,-cy); return 1;
     case "pulse": { const s2=1+0.2*Math.sin(p*Math.PI); ctx.translate(cx,cy); ctx.scale(s2,s2); ctx.translate(-cx,-cy); return 1; }
     case "shake": { ctx.translate(Math.sin(p*Math.PI*8)*(1-p)*6,0); return 1; }
+    case "wiggle": {
+      // like shake but rotational: oscillates around the layer centre, damping out
+      const amt=(step?.wiggleAmount??15)*Math.PI/180;
+      const a=Math.sin(p*Math.PI*8)*(1-p)*amt;
+      ctx.translate(cx,cy); ctx.rotate(a); ctx.translate(-cx,-cy); return 1;
+    }
     case "move": {
       const mx=(step?.moveX||0)*p, my=(step?.moveY||0)*p;
       ctx.translate(mx,my); return 1;
@@ -236,7 +248,7 @@ function getTwProgress(anims, t) {
   return 1;
 }
 
-function drawChain(ctx, layer, cw, ch, t) {
+function drawChain(ctx, layer, cw, ch, t, loopDur=0) {
   const anims = layer.animations||[];
   const { cx, cy } = layerCenter(layer);
   const baseRot = (layer.rotation||0)*Math.PI/180;
@@ -246,7 +258,7 @@ function drawChain(ctx, layer, cw, ch, t) {
     ctx.save();
     if (baseRot) { ctx.translate(cx,cy); ctx.rotate(baseRot); ctx.translate(-cx,-cy); }
     if (baseOpacity!==1) ctx.globalAlpha = Math.max(0,Math.min(1,baseOpacity));
-    drawContent(ctx,layer,cw,ch,1,t);
+    drawContent(ctx,layer,cw,ch,1,t,loopDur);
     ctx.restore();
     return;
   }
@@ -268,11 +280,11 @@ function drawChain(ctx, layer, cw, ch, t) {
     if (lp>0||!isEnt) opacity *= applySingle(ctx,step.type,lp,step.easing,layer,cw,ch,step);
   }
   ctx.globalAlpha = Math.max(0,Math.min(1,opacity));
-  drawContent(ctx,layer,cw,ch,getTwProgress(anims,t),t);
+  drawContent(ctx,layer,cw,ch,getTwProgress(anims,t),t,loopDur);
   ctx.restore();
 }
 
-function drawContent(ctx, L, cw, ch, tw, t=0) {
+function drawContent(ctx, L, cw, ch, tw, t=0, loopDur=0) {
   if (L.type==="text") {
     const txt = tw<1?L.text.slice(0,Math.ceil(L.text.length*tw)):L.text;
     ctx.font=`${L.bold?"bold ":""}${L.italic?"italic ":""}${L.fontSize}px ${L.fontFamily}`;
@@ -295,16 +307,21 @@ function drawContent(ctx, L, cw, ch, tw, t=0) {
     /* Marching ants: animated dashed stroke around a (rounded) rectangle.
        Ant style is done with dash patterns + line caps:
        rect = long dash (round caps if antRounded), square = dash length == thickness,
-       circle = near-zero dash with round caps (dots). Offset moves with time t. */
+       circle = near-zero dash with round caps (dots). Offset moves with time t.
+       Speed is snapped so the ants travel a whole number of dash periods over
+       loopDur, making the animation wrap seamlessly at the loop point. */
     const sz=Math.max(1,L.antSize||4), gap=Math.max(1,L.antGap??8);
     ctx.save();
     ctx.globalAlpha=ctx.globalAlpha*Math.max(0,Math.min(1,L.antAlpha??1));
     ctx.strokeStyle=L.color||"#ffffff";
     ctx.lineWidth=sz;
-    if(L.antShape==="circle"){ctx.setLineDash([0.01,gap+sz]);ctx.lineCap="round";}
-    else if(L.antShape==="square"){ctx.setLineDash([sz,gap]);ctx.lineCap="butt";}
-    else{ctx.setLineDash([Math.max(1,L.antLen??10),gap]);ctx.lineCap=L.antRounded?"round":"butt";}
-    ctx.lineDashOffset=(L.antDir==="ccw"?1:-1)*t*(L.antSpeed??30);
+    let period;
+    if(L.antShape==="circle"){ctx.setLineDash([0.01,gap+sz]);ctx.lineCap="round";period=0.01+gap+sz;}
+    else if(L.antShape==="square"){ctx.setLineDash([sz,gap]);ctx.lineCap="butt";period=sz+gap;}
+    else{const len=Math.max(1,L.antLen??10);ctx.setLineDash([len,gap]);ctx.lineCap=L.antRounded?"round":"butt";period=len+gap;}
+    let speed=L.antSpeed??30;
+    if(loopDur>0&&speed>0)speed=Math.max(1,Math.round(speed*loopDur/period))*period/loopDur;
+    ctx.lineDashOffset=(L.antDir==="ccw"?1:-1)*t*speed;
     const r=Math.min(L.radius||0,Math.min(L.width,L.height)/2);
     if(r>0)rrect(ctx,L.x,L.y,L.width,L.height,r);else{ctx.beginPath();ctx.rect(L.x,L.y,L.width,L.height);}
     ctx.stroke();
@@ -347,7 +364,7 @@ function drawContent(ctx, L, cw, ch, tw, t=0) {
 
 function rrect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();}
 
-function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent) {
+function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent, loopDur=0) {
   const ctx=canvas.getContext("2d"), w=canvas.width, h=canvas.height;
   ctx.clearRect(0,0,w,h);
   if (!bgTransparent) {
@@ -357,7 +374,7 @@ function renderFrame(canvas, layers, bgColor, bgGrad, absTime, bgTransparent) {
     } else ctx.fillStyle=bgColor;
     ctx.fillRect(0,0,w,h);
   }
-  layers.forEach(L=>{if(!L.visible)return;drawChain(ctx,L,w,h,absTime-(L.animStartDelay||0));});
+  layers.forEach(L=>{if(!L.visible)return;drawChain(ctx,L,w,h,absTime-(L.animStartDelay||0),loopDur);});
 }
 
 class GIFEncoder {
@@ -449,7 +466,7 @@ function App() {
   const rmAnim = useCallback((lid,idx)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];a.splice(idx,1);return{...l,animations:a};}));setSelAnimIdx(i=>Math.max(0,Math.min(i,selAnims.length-2)));},[selAnims.length]);
   const mvAnim = useCallback((lid,idx,dir)=>{setLayers(p=>p.map(l=>{if(l.id!==lid)return l;const a=[...(l.animations||[])];const ni=idx+dir;if(ni<0||ni>=a.length)return l;[a[idx],a[ni]]=[a[ni],a[idx]];return{...l,animations:a};}));setSelAnimIdx(i=>i+dir);},[]);
 
-  useEffect(()=>{const c=canvasRef.current;if(!c)return;c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,playing?curTime:999,bgTransparent);},[layers,canvasW,canvasH,bgColor,bgGrad,curTime,playing,bgTransparent]);
+  useEffect(()=>{const c=canvasRef.current;if(!c)return;c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,playing?curTime:999,bgTransparent,totalDur);},[layers,canvasW,canvasH,bgColor,bgGrad,curTime,playing,bgTransparent,totalDur]);
   useEffect(()=>{if(!playing){if(animRef.current)cancelAnimationFrame(animRef.current);return;}startRef.current=performance.now()-curTime*1000;const tick=now=>{const e=(now-startRef.current)/1000;if(e>=totalDur){setCurTime(0);startRef.current=now;}else setCurTime(e);animRef.current=requestAnimationFrame(tick);};animRef.current=requestAnimationFrame(tick);return()=>{if(animRef.current)cancelAnimationFrame(animRef.current);};},[playing,totalDur]);
 
   const mkBase = extra=>({id:uid(),visible:true,animations:[],animStartDelay:0,rotation:0,opacity:1,...extra});
@@ -468,10 +485,10 @@ function App() {
   const onMove=e=>{if(!drag)return;const r=canvasRef.current.getBoundingClientRect();const mx=(e.clientX-r.left)*canvasW/r.width,my=(e.clientY-r.top)*canvasH/r.height;upLayer(drag.id,{x:Math.round(drag.ox+mx-drag.sx),y:Math.round(drag.oy+my-drag.sy)});};
   const onUp=()=>setDrag(null);
 
-  const expPNG=()=>{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
-  const expGIF=async()=>{setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
+  const expPNG=()=>{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;renderFrame(c,layers,bgColor,bgGrad,999,bgTransparent,totalDur);c.toBlob(b=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.png`;a.click();URL.revokeObjectURL(u);});};
+  const expGIF=async()=>{setExporting(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const enc=new GIFEncoder(canvasW,canvasH,bgTransparent);enc.setDelay(Math.round(1000/fps));const tf=Math.round(totalDur*fps);for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);enc.addFrame(c.getContext("2d"));}const b=enc.toBlob(),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.gif`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);}setExporting(false);};
 
-  const expWebP=async()=>{setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
+  const expWebP=async()=>{setExportingWebP(true);await new Promise(r=>setTimeout(r,50));try{const c=document.createElement("canvas");c.width=canvasW;c.height=canvasH;const tf=Math.round(totalDur*fps);const frames=[];for(let i=0;i<=tf;i++){renderFrame(c,layers,bgColor,bgGrad,(i/tf)*totalDur,bgTransparent,totalDur);const blob=await new Promise(r=>c.toBlob(r,"image/webp",1));if(!blob||blob.type!=="image/webp")throw new Error("This browser cannot encode WebP — try Chrome or Edge.");frames.push(new Uint8Array(await blob.arrayBuffer()));}const b=buildAnimWebP(frames,canvasW,canvasH,Math.round(1000/fps)),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=`streamdeck-${canvasW}x${canvasH}.webp`;a.click();URL.revokeObjectURL(u);}catch(e){console.error(e);alert(e.message||"WebP export failed");}setExportingWebP(false);};
 
   /* ── Project save / load ──
      Everything is serialised to JSON. Image layers hold a live HTMLImageElement (l.img),
@@ -779,6 +796,7 @@ function App() {
                 <PR l="Size"><input type="range" min={1} max={24} value={sel.antSize||4} onChange={e=>upLayer(sel.id,{antSize:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.antSize||4}</span></PR>
                 <PR l="Gap"><input type="range" min={1} max={60} value={sel.antGap??8} onChange={e=>upLayer(sel.id,{antGap:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:28,textAlign:"right"}}>{sel.antGap??8}</span></PR>
                 <PR l="Speed"><input type="range" min={0} max={200} step={5} value={sel.antSpeed??30} onChange={e=>upLayer(sel.id,{antSpeed:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:38,textAlign:"right"}}>{sel.antSpeed??30}px/s</span></PR>
+                {(()=>{const sz=Math.max(1,sel.antSize||4),gap=Math.max(1,sel.antGap??8);const period=(sel.antShape||"rect")==="circle"?0.01+gap+sz:(sel.antShape==="square"?sz+gap:Math.max(1,sel.antLen??10)+gap);const sp=sel.antSpeed??30;if(!(sp>0)||!(totalDur>0))return null;const eff=Math.max(1,Math.round(sp*totalDur/period))*period/totalDur;return <div style={{fontSize:9,color:"#555",textAlign:"right",marginTop:-2}}>runs at {eff.toFixed(1)}px/s so the loop wraps seamlessly</div>;})()}
                 <PR l="Direction">{[{v:"cw",l:"↻ CW"},{v:"ccw",l:"↺ CCW"}].map(d=><button key={d.v} onClick={()=>upLayer(sel.id,{antDir:d.v})} style={{...AB,padding:"2px 8px",background:(sel.antDir||"cw")===d.v?"#e94560":"#1e1e2e",color:(sel.antDir||"cw")===d.v?"#fff":"#aaa"}}>{d.l}</button>)}</PR>
                 <PR l="Color"><input type="color" value={sel.color} onChange={e=>upLayer(sel.id,{color:e.target.value})} style={{width:28,height:22,border:"none",borderRadius:4,cursor:"pointer"}}/></PR>
                 <PR l="Alpha"><input type="range" min={0} max={1} step={0.01} value={sel.antAlpha??1} onChange={e=>upLayer(sel.id,{antAlpha:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{Math.round((sel.antAlpha??1)*100)}%</span></PR>
@@ -822,6 +840,8 @@ function App() {
                 <PR l="Type"><select value={selAnim.type} onChange={e=>{const newType=e.target.value;upAnim(sel.id,selAnimIdx,{type:newType,...(ANIM_PARAM_DEFAULTS[newType]||{})});}} style={{...NI,width:"100%"}}>{ANIM_TYPES.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}</select></PR>
                 <PR l="Duration"><input type="range" min={0.05} max={5} step={0.05} value={selAnim.duration} onChange={e=>upAnim(sel.id,selAnimIdx,{duration:+e.target.value})} style={{flex:1}}/><span style={{fontSize:10,color:"#888",width:32,textAlign:"right"}}>{selAnim.duration.toFixed(2)}s</span></PR>
                 <PR l="Easing"><select value={selAnim.easing||"easeOut"} onChange={e=>upAnim(sel.id,selAnimIdx,{easing:e.target.value})} style={{...NI,width:"100%"}}>{EASING_OPTIONS.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}</select></PR>
+                {/* Wiggle params */}
+                {selAnim.type==="wiggle"&&<PR l="Amount"><input type="range" min={1} max={90} value={selAnim.wiggleAmount??15} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.wiggleAmount??15} min={1} max={90} onChange={e=>upAnim(sel.id,selAnimIdx,{wiggleAmount:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>°</span></PR>}
                 {/* Move params */}
                 {(selAnim.type==="move"||selAnim.type==="moveScale")&&<React.Fragment>
                   <PR l="Move X"><input type="range" min={-300} max={300} value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{flex:1}}/><input type="number" value={selAnim.moveX||0} onChange={e=>upAnim(sel.id,selAnimIdx,{moveX:+e.target.value})} style={{...NI,width:46}}/><span style={{fontSize:9,color:"#555"}}>px</span></PR>
