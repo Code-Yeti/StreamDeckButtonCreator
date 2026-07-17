@@ -2,7 +2,7 @@
 
 Design animated button images for your Elgato Stream Deck — right in the
 browser, in a single HTML file. No install, no build step, no server: download
-`streamdeck-creator.html`, open it in Chrome or Edge, and start designing.
+`index.html`, open it in Chrome or Edge, and start designing.
 
 ![version](https://img.shields.io/badge/version-4.4.1-e94560)
 
@@ -55,7 +55,7 @@ a random name like `SuspiciousCat`. Files are stamped
 git clone https://github.com/Code-Yeti/StreamDeckButtonCreator.git
 ```
 
-Open `streamdeck-creator.html` in Chrome or Edge. That's it.
+Open `index.html` in Chrome or Edge. That's it.
 
 > WebP export uses the browser's WebP encoder, so Firefox/Safari may only
 > export PNG and GIF. An internet connection is needed on first load for the

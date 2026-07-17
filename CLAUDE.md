@@ -1,7 +1,7 @@
 # Stream Deck Button Creator
 
 Single-file browser app for designing animated Stream Deck button images.
-Everything lives in `streamdeck-creator.html` — no build step, no dependencies
+Everything lives in `index.html` — no build step, no dependencies
 to install. Open the file in a browser (Chrome/Edge preferred; WebP export
 needs a Chromium browser) to run and test it.
 
